@@ -7,6 +7,7 @@ use crate::copy;
 use crate::drive::{archive_path_on_drive, DriveInfo};
 use crate::error::{IoContext, TuckError, TuckResult};
 use crate::manifest::{ArchiveEntry, FileChecksum, Manifest};
+use crate::pending::{PendingKind, PendingOperation};
 
 /// Information about a planned add operation.
 #[derive(Debug)]
@@ -57,6 +58,15 @@ pub fn execute_add(plan: &AddPlan) -> TuckResult<Vec<FileChecksum>> {
     // Ensure root directory exists (needed when using --prefix)
     std::fs::create_dir_all(&plan.drive_root).io_context(&plan.drive_root)?;
 
+    // Write pending marker before starting
+    let pending = PendingOperation {
+        kind: PendingKind::Add,
+        original_path: plan.original_path.clone(),
+        archive_path: plan.archive_path.clone(),
+        started_at: Utc::now(),
+    };
+    PendingOperation::write(&plan.drive_root, &pending)?;
+
     // Step 1: Hash source files before copy
     let source_checksums = checksum::hash_path(&plan.original_path)?;
 
@@ -97,6 +107,9 @@ pub fn execute_add(plan: &AddPlan) -> TuckResult<Vec<FileChecksum>> {
     let mut manifest = Manifest::load(&plan.drive_root)?;
     manifest.add_entry(entry)?;
     manifest.save(&plan.drive_root)?;
+
+    // Clear pending marker — operation completed successfully
+    PendingOperation::clear(&plan.drive_root)?;
 
     Ok(dest_checksums)
 }

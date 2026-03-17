@@ -10,7 +10,7 @@ Tuck is a macOS CLI tool for archiving files/folders to an external drive and re
 source "$HOME/.cargo/env"   # if cargo isn't in PATH
 cargo check                 # type-check
 cargo build                 # compile
-cargo test                  # run all unit tests (currently 23)
+cargo test                  # run all unit tests (currently 28)
 cargo run --bin tuck -- <command>  # run the CLI
 ```
 
@@ -32,8 +32,9 @@ This split exists so `tuck-core` can later be wrapped via FFI for a Swift/macOS 
 - `config.rs` — loads/saves `~/.config/tuck/config.json` with `default_prefix` and `default_drive`. CLI commands load config and use `resolve_prefix()`/`resolve_drive_name()` to merge CLI flags with config defaults (CLI flag wins).
 - `drive.rs` — scans `/Volumes/`, filters boot volume symlinks. `resolve_drive(name, prefix)` is the main entry point. `DriveInfo` has `mount_path` (physical mount) and `root_path` (effective tuck root, = `mount_path` or `mount_path/prefix`). All other modules use `root_path`.
 - `copy.rs` — recursive copy preserving mtime via `filetime`. Skips symlinks.
-- `archive.rs` — `plan_add` validates, `execute_add` does hash→copy→verify→manifest
-- `restore.rs` — `plan_restore` finds entry, `execute_restore` does verify→copy→manifest update
+- `pending.rs` — `PendingOperation` marker written to `.tuck-pending.json` before copy starts, cleared on success. If interrupted, the next command detects it and prompts cleanup. Handles both add (removes partial on drive) and restore (removes partial local copy).
+- `archive.rs` — `plan_add` validates, `execute_add` does pending→hash→copy→verify→manifest→clear pending
+- `restore.rs` — `plan_restore` finds entry, `execute_restore` does verify→pending→copy→manifest→clear pending
 - `verify.rs` — `verify_entry`/`verify_all` check stored checksums against files on drive
 
 ### CLI commands (tuck-cli)

@@ -1,10 +1,13 @@
 use std::path::{Path, PathBuf};
 
+use chrono::Utc;
+
 use crate::checksum;
 use crate::copy;
 use crate::drive::{archive_path_on_drive, DriveInfo};
 use crate::error::{TuckError, TuckResult};
 use crate::manifest::{ArchiveEntry, Manifest};
+use crate::pending::{PendingKind, PendingOperation};
 
 /// Information about a planned restore operation.
 #[derive(Debug)]
@@ -78,6 +81,15 @@ pub fn execute_restore(plan: &RestorePlan, keep_archive: bool) -> TuckResult<()>
         }
     }
 
+    // Write pending marker before starting the copy
+    let pending = PendingOperation {
+        kind: PendingKind::Restore,
+        original_path: plan.original_path.clone(),
+        archive_path: plan.archive_path.clone(),
+        started_at: Utc::now(),
+    };
+    PendingOperation::write(&plan.drive_root, &pending)?;
+
     // Step 2: Copy back to original location
     copy::copy_recursive(&plan.archive_path, &plan.original_path)?;
 
@@ -90,6 +102,9 @@ pub fn execute_restore(plan: &RestorePlan, keep_archive: bool) -> TuckResult<()>
     if !keep_archive {
         copy::remove_path(&plan.archive_path)?;
     }
+
+    // Clear pending marker — operation completed successfully
+    PendingOperation::clear(&plan.drive_root)?;
 
     Ok(())
 }

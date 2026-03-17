@@ -11,6 +11,7 @@ pub fn run(drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckErr
         config.resolve_drive_name(drive_name),
         config.resolve_prefix(prefix),
     )?;
+    super::check_pending(&drive.root_path)?;
     let manifest = Manifest::load(&drive.root_path)?;
 
     if manifest.entries.is_empty() {

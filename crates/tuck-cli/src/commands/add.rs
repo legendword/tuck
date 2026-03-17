@@ -21,6 +21,7 @@ pub fn run(
         config.resolve_drive_name(drive_name),
         config.resolve_prefix(prefix),
     )?;
+    super::check_pending(&drive.root_path)?;
     let plan = archive::plan_add(Path::new(path), &drive)?;
 
     let kind = if plan.is_directory { "directory" } else { "file" };

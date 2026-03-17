@@ -29,6 +29,7 @@ pub fn run(path: &str, drive_name: Option<&str>, prefix: Option<&str>) -> Result
     let mut found = false;
 
     for d in &drives {
+        super::check_pending(&d.root_path)?;
         if let Some(entry) = verify::check_status(target, d)? {
             found = true;
             let kind = if entry.is_directory {

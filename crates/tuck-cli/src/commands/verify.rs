@@ -11,6 +11,8 @@ pub fn run(drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckErr
         config.resolve_prefix(prefix),
     )?;
 
+    super::check_pending(&drive.root_path)?;
+
     println!(
         "Verifying all archives on drive '{}'...\n",
         drive.name

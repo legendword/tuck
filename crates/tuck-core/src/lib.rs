@@ -5,5 +5,6 @@ pub mod copy;
 pub mod drive;
 pub mod error;
 pub mod manifest;
+pub mod pending;
 pub mod restore;
 pub mod verify;

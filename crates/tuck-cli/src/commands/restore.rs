@@ -21,6 +21,7 @@ pub fn run(
         config.resolve_drive_name(drive_name),
         config.resolve_prefix(prefix),
     )?;
+    super::check_pending(&drive.root_path)?;
     let plan = restore::plan_restore(Path::new(path), &drive)?;
 
     let kind = if plan.entry.is_directory {
