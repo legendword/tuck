@@ -1,12 +1,17 @@
 use colored::Colorize;
 use humansize::{format_size, BINARY};
+use tuck_core::config::Config;
 use tuck_core::drive;
 use tuck_core::error::TuckError;
 use tuck_core::manifest::Manifest;
 
-pub fn run(drive_name: Option<&str>) -> Result<(), TuckError> {
-    let drive = drive::resolve_drive(drive_name)?;
-    let manifest = Manifest::load(&drive.mount_path)?;
+pub fn run(drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckError> {
+    let config = Config::load()?;
+    let drive = drive::resolve_drive(
+        config.resolve_drive_name(drive_name),
+        config.resolve_prefix(prefix),
+    )?;
+    let manifest = Manifest::load(&drive.root_path)?;
 
     if manifest.entries.is_empty() {
         println!("No archived entries on drive '{}'.", drive.name);

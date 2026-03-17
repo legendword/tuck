@@ -5,7 +5,7 @@ use chrono::Utc;
 use crate::checksum;
 use crate::copy;
 use crate::drive::{archive_path_on_drive, DriveInfo};
-use crate::error::{TuckError, TuckResult};
+use crate::error::{IoContext, TuckError, TuckResult};
 use crate::manifest::{ArchiveEntry, FileChecksum, Manifest};
 
 /// Information about a planned add operation.
@@ -14,7 +14,7 @@ pub struct AddPlan {
     pub original_path: PathBuf,
     pub archive_path: PathBuf,
     pub drive_name: String,
-    pub drive_mount: PathBuf,
+    pub drive_root: PathBuf,
     pub is_directory: bool,
     pub size_bytes: u64,
 }
@@ -30,10 +30,10 @@ pub fn plan_add(path: &Path, drive: &DriveInfo) -> TuckResult<AddPlan> {
         return Err(TuckError::PathNotFound(original_path));
     }
 
-    let archive_path = archive_path_on_drive(&drive.mount_path, &original_path);
+    let archive_path = archive_path_on_drive(&drive.root_path, &original_path);
 
     // Check if already archived in manifest
-    let manifest = Manifest::load(&drive.mount_path)?;
+    let manifest = Manifest::load(&drive.root_path)?;
     if manifest.find_entry(&original_path).is_some() {
         return Err(TuckError::AlreadyExists(original_path));
     }
@@ -45,7 +45,7 @@ pub fn plan_add(path: &Path, drive: &DriveInfo) -> TuckResult<AddPlan> {
         original_path,
         archive_path,
         drive_name: drive.name.clone(),
-        drive_mount: drive.mount_path.clone(),
+        drive_root: drive.root_path.clone(),
         is_directory,
         size_bytes,
     })
@@ -54,6 +54,9 @@ pub fn plan_add(path: &Path, drive: &DriveInfo) -> TuckResult<AddPlan> {
 /// Execute an add: copy files to drive, verify checksums, update manifest.
 /// Returns the checksums of the archived files.
 pub fn execute_add(plan: &AddPlan) -> TuckResult<Vec<FileChecksum>> {
+    // Ensure root directory exists (needed when using --prefix)
+    std::fs::create_dir_all(&plan.drive_root).io_context(&plan.drive_root)?;
+
     // Step 1: Hash source files before copy
     let source_checksums = checksum::hash_path(&plan.original_path)?;
 
@@ -91,9 +94,9 @@ pub fn execute_add(plan: &AddPlan) -> TuckResult<Vec<FileChecksum>> {
         drive_name: plan.drive_name.clone(),
     };
 
-    let mut manifest = Manifest::load(&plan.drive_mount)?;
+    let mut manifest = Manifest::load(&plan.drive_root)?;
     manifest.add_entry(entry)?;
-    manifest.save(&plan.drive_mount)?;
+    manifest.save(&plan.drive_root)?;
 
     Ok(dest_checksums)
 }

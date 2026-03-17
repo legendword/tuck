@@ -1,10 +1,15 @@
 use colored::Colorize;
+use tuck_core::config::Config;
 use tuck_core::drive;
 use tuck_core::error::TuckError;
 use tuck_core::verify;
 
-pub fn run(drive_name: Option<&str>) -> Result<(), TuckError> {
-    let drive = drive::resolve_drive(drive_name)?;
+pub fn run(drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckError> {
+    let config = Config::load()?;
+    let drive = drive::resolve_drive(
+        config.resolve_drive_name(drive_name),
+        config.resolve_prefix(prefix),
+    )?;
 
     println!(
         "Verifying all archives on drive '{}'...\n",

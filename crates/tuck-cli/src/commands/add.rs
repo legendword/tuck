@@ -4,17 +4,23 @@ use colored::Colorize;
 use dialoguer::Confirm;
 use humansize::{format_size, BINARY};
 use tuck_core::archive;
+use tuck_core::config::Config;
 use tuck_core::drive;
 use tuck_core::error::TuckError;
 
 pub fn run(
     path: &str,
     drive_name: Option<&str>,
+    prefix: Option<&str>,
     dry_run: bool,
     no_confirm: bool,
     keep_local: bool,
 ) -> Result<(), TuckError> {
-    let drive = drive::resolve_drive(drive_name)?;
+    let config = Config::load()?;
+    let drive = drive::resolve_drive(
+        config.resolve_drive_name(drive_name),
+        config.resolve_prefix(prefix),
+    )?;
     let plan = archive::plan_add(Path::new(path), &drive)?;
 
     let kind = if plan.is_directory { "directory" } else { "file" };

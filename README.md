@@ -28,6 +28,7 @@ This will:
 
 Flags:
 - `--drive <name>` — specify drive (auto-detected if only one connected)
+- `--prefix <folder>` — use a subfolder on the drive as root (see [Using a prefix](#using-a-prefix))
 - `--dry-run` — preview without making changes
 - `--no-confirm` — skip confirmation prompt
 - `--keep-local` — archive without deleting the local copy
@@ -65,10 +66,37 @@ tuck verify
 
 Checks BLAKE3 checksums of all archived files on the drive.
 
+### Using a prefix
+
+If your external drive contains other files, or you share a drive between multiple Macs, use `--prefix` to scope all tuck data under a subfolder:
+
+```bash
+tuck add ~/Documents/BigProject --prefix tuck-macbook
+tuck list --prefix tuck-macbook
+tuck restore ~/Documents/BigProject --prefix tuck-macbook
+```
+
+This stores everything under `/Volumes/Drive/tuck-macbook/` instead of the drive root — including the manifest and all archived files. Each prefix gets its own independent manifest, so two machines can use the same drive with different prefixes (e.g. `tuck-macbook` and `tuck-imac`) without interfering.
+
+To avoid passing `--prefix` every time, set a default:
+
+```bash
+tuck config set-prefix tuck-macbook
+```
+
+Now all commands automatically use `tuck-macbook` as the prefix. You can still override it with `--prefix` on any individual command. Similarly, `tuck config set-drive MyDrive` sets a default drive.
+
+```bash
+tuck config show     # view current defaults
+tuck config set-prefix ""  # clear the default
+```
+
+Config is stored at `~/.config/tuck/config.json`.
+
 ## How it works
 
 - **Drive detection**: Scans `/Volumes/`, skips the boot volume and hidden entries. Auto-detects if one drive is connected; asks you to specify if multiple.
-- **Path mapping**: Strips leading `/` and mirrors the directory structure on the drive. `/Users/you/Documents/foo.txt` → `/Volumes/Drive/Users/you/Documents/foo.txt`.
+- **Path mapping**: Strips leading `/` and mirrors the directory structure on the drive. `/Users/you/Documents/foo.txt` → `/Volumes/Drive/Users/you/Documents/foo.txt`. With `--prefix myprefix`, the root becomes `/Volumes/Drive/myprefix/`.
 - **Checksums**: BLAKE3, streamed in 64KB chunks. Files are hashed before copy, hashed again after copy, and compared. Stored per-file for granular verification.
 - **Manifest**: A `.tuck-manifest.json` file on the drive root tracks all archived entries with original paths, timestamps, sizes, and checksums. Written atomically (write `.tmp`, then rename).
 - **Symlinks**: Skipped with a warning (v1).

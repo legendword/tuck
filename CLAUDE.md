@@ -10,7 +10,7 @@ Tuck is a macOS CLI tool for archiving files/folders to an external drive and re
 source "$HOME/.cargo/env"   # if cargo isn't in PATH
 cargo check                 # type-check
 cargo build                 # compile
-cargo test                  # run all unit tests (currently 20)
+cargo test                  # run all unit tests (currently 23)
 cargo run --bin tuck -- <command>  # run the CLI
 ```
 
@@ -29,7 +29,8 @@ This split exists so `tuck-core` can later be wrapped via FFI for a Swift/macOS 
 - `error.rs` — `TuckError` enum, `IoContext` trait for wrapping `std::io::Error` with path info
 - `manifest.rs` — JSON manifest (``.tuck-manifest.json`) on the drive root. Atomic writes via .tmp+rename.
 - `checksum.rs` — BLAKE3 streaming hashes, 64KB chunks
-- `drive.rs` — scans `/Volumes/`, filters boot volume symlinks. `resolve_drive(Option<&str>)` is the main entry point.
+- `config.rs` — loads/saves `~/.config/tuck/config.json` with `default_prefix` and `default_drive`. CLI commands load config and use `resolve_prefix()`/`resolve_drive_name()` to merge CLI flags with config defaults (CLI flag wins).
+- `drive.rs` — scans `/Volumes/`, filters boot volume symlinks. `resolve_drive(name, prefix)` is the main entry point. `DriveInfo` has `mount_path` (physical mount) and `root_path` (effective tuck root, = `mount_path` or `mount_path/prefix`). All other modules use `root_path`.
 - `copy.rs` — recursive copy preserving mtime via `filetime`. Skips symlinks.
 - `archive.rs` — `plan_add` validates, `execute_add` does hash→copy→verify→manifest
 - `restore.rs` — `plan_restore` finds entry, `execute_restore` does verify→copy→manifest update
@@ -42,7 +43,7 @@ This split exists so `tuck-core` can later be wrapped via FFI for a Swift/macOS 
 ## Conventions
 
 - All paths stored in the manifest are canonicalized (absolute, symlinks resolved)
-- Archive path on drive = drive mount + original path with leading `/` stripped
+- Archive path on drive = drive root_path + original path with leading `/` stripped (root_path = mount_path when no prefix, mount_path/prefix otherwise)
 - Error handling: library returns `TuckResult<T>`, CLI maps `TuckError::exit_code()` to process exit codes (0=ok, 1=general, 2=drive, 3=checksum, 4=cancelled)
 - Symlinks within archived directories are skipped with a warning
 

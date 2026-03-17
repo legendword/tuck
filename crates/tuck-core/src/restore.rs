@@ -11,7 +11,7 @@ use crate::manifest::{ArchiveEntry, Manifest};
 pub struct RestorePlan {
     pub original_path: PathBuf,
     pub archive_path: PathBuf,
-    pub drive_mount: PathBuf,
+    pub drive_root: PathBuf,
     pub entry: ArchiveEntry,
     pub local_exists: bool,
 }
@@ -36,13 +36,13 @@ pub fn plan_restore(path: &Path, drive: &DriveInfo) -> TuckResult<RestorePlan> {
         }
     };
 
-    let manifest = Manifest::load(&drive.mount_path)?;
+    let manifest = Manifest::load(&drive.root_path)?;
     let entry = manifest
         .find_entry(&original_path)
         .ok_or_else(|| TuckError::NotArchived(original_path.clone()))?
         .clone();
 
-    let archive_path = archive_path_on_drive(&drive.mount_path, &original_path);
+    let archive_path = archive_path_on_drive(&drive.root_path, &original_path);
 
     if !archive_path.exists() {
         return Err(TuckError::PathNotFound(archive_path));
@@ -53,7 +53,7 @@ pub fn plan_restore(path: &Path, drive: &DriveInfo) -> TuckResult<RestorePlan> {
     Ok(RestorePlan {
         original_path,
         archive_path,
-        drive_mount: drive.mount_path.clone(),
+        drive_root: drive.root_path.clone(),
         entry,
         local_exists,
     })
@@ -82,9 +82,9 @@ pub fn execute_restore(plan: &RestorePlan, keep_archive: bool) -> TuckResult<()>
     copy::copy_recursive(&plan.archive_path, &plan.original_path)?;
 
     // Step 3: Update manifest — remove entry
-    let mut manifest = Manifest::load(&plan.drive_mount)?;
+    let mut manifest = Manifest::load(&plan.drive_root)?;
     manifest.remove_entry(&plan.original_path)?;
-    manifest.save(&plan.drive_mount)?;
+    manifest.save(&plan.drive_root)?;
 
     // Step 4: Optionally remove archive copy
     if !keep_archive {

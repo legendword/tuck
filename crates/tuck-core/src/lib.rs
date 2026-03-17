@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod checksum;
+pub mod config;
 pub mod copy;
 pub mod drive;
 pub mod error;

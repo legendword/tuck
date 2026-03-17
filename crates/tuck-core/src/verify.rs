@@ -29,7 +29,7 @@ impl VerifyResult {
 
 /// Verify a single archive entry's checksums against the files on drive.
 pub fn verify_entry(entry: &ArchiveEntry, drive: &DriveInfo) -> TuckResult<VerifyResult> {
-    let archive_base = archive_path_on_drive(&drive.mount_path, &entry.original_path);
+    let archive_base = archive_path_on_drive(&drive.root_path, &entry.original_path);
     let mut passed = 0;
     let mut failed = Vec::new();
 
@@ -71,7 +71,7 @@ pub fn verify_entry(entry: &ArchiveEntry, drive: &DriveInfo) -> TuckResult<Verif
 
 /// Verify all entries in the manifest.
 pub fn verify_all(drive: &DriveInfo) -> TuckResult<Vec<VerifyResult>> {
-    let manifest = Manifest::load(&drive.mount_path)?;
+    let manifest = Manifest::load(&drive.root_path)?;
     let mut results = Vec::new();
     for entry in &manifest.entries {
         results.push(verify_entry(entry, drive)?);
@@ -94,6 +94,6 @@ pub fn check_status(path: &Path, drive: &DriveInfo) -> TuckResult<Option<Archive
             .join(path)
     };
 
-    let manifest = Manifest::load(&drive.mount_path)?;
+    let manifest = Manifest::load(&drive.root_path)?;
     Ok(manifest.find_entry(&original_path).cloned())
 }

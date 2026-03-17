@@ -2,19 +2,30 @@ use std::path::Path;
 
 use colored::Colorize;
 use humansize::{format_size, BINARY};
+use tuck_core::config::Config;
 use tuck_core::drive;
 use tuck_core::error::TuckError;
 use tuck_core::verify;
 
-pub fn run(path: &str) -> Result<(), TuckError> {
-    let drives = drive::list_drives()?;
+pub fn run(path: &str, drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckError> {
+    let config = Config::load()?;
+    let effective_drive = config.resolve_drive_name(drive_name);
+    let effective_prefix = config.resolve_prefix(prefix);
+    let target = Path::new(path);
+
+    // If drive or prefix is specified (via flag or config), resolve to that specific drive.
+    // Otherwise scan all drives at their root.
+    let drives = if effective_drive.is_some() || effective_prefix.is_some() {
+        vec![drive::resolve_drive(effective_drive, effective_prefix)?]
+    } else {
+        drive::list_drives()?
+    };
 
     if drives.is_empty() {
         println!("{}", "No external drives connected.".yellow());
         return Ok(());
     }
 
-    let target = Path::new(path);
     let mut found = false;
 
     for d in &drives {

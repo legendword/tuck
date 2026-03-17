@@ -20,6 +20,9 @@ enum Commands {
         /// Name of the external drive (auto-detected if only one)
         #[arg(long)]
         drive: Option<String>,
+        /// Subfolder on the drive to use as root for tuck data
+        #[arg(long)]
+        prefix: Option<String>,
         /// Show what would be done without making changes
         #[arg(long)]
         dry_run: bool,
@@ -37,6 +40,9 @@ enum Commands {
         /// Name of the external drive (auto-detected if only one)
         #[arg(long)]
         drive: Option<String>,
+        /// Subfolder on the drive to use as root for tuck data
+        #[arg(long)]
+        prefix: Option<String>,
         /// Show what would be done without making changes
         #[arg(long)]
         dry_run: bool,
@@ -52,17 +58,50 @@ enum Commands {
         /// Name of the external drive (auto-detected if only one)
         #[arg(long)]
         drive: Option<String>,
+        /// Subfolder on the drive to use as root for tuck data
+        #[arg(long)]
+        prefix: Option<String>,
     },
     /// Check if a path is archived
     Status {
         /// Path to check
         path: String,
+        /// Name of the external drive (auto-detected if only one)
+        #[arg(long)]
+        drive: Option<String>,
+        /// Subfolder on the drive to use as root for tuck data
+        #[arg(long)]
+        prefix: Option<String>,
     },
     /// Verify checksums of all archived files on a drive
     Verify {
         /// Name of the external drive (auto-detected if only one)
         #[arg(long)]
         drive: Option<String>,
+        /// Subfolder on the drive to use as root for tuck data
+        #[arg(long)]
+        prefix: Option<String>,
+    },
+    /// View or set default configuration
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// Show current configuration
+    Show,
+    /// Set default prefix
+    SetPrefix {
+        /// Prefix value (use "" to clear)
+        value: String,
+    },
+    /// Set default drive
+    SetDrive {
+        /// Drive name (use "" to clear)
+        value: String,
     },
 }
 
@@ -73,20 +112,23 @@ fn main() {
         Commands::Add {
             path,
             drive,
+            prefix,
             dry_run,
             no_confirm,
             keep_local,
-        } => commands::add::run(&path, drive.as_deref(), dry_run, no_confirm, keep_local),
+        } => commands::add::run(&path, drive.as_deref(), prefix.as_deref(), dry_run, no_confirm, keep_local),
         Commands::Restore {
             path,
             drive,
+            prefix,
             dry_run,
             force,
             keep_archive,
-        } => commands::restore::run(&path, drive.as_deref(), dry_run, force, keep_archive),
-        Commands::List { drive } => commands::list::run(drive.as_deref()),
-        Commands::Status { path } => commands::status::run(&path),
-        Commands::Verify { drive } => commands::verify::run(drive.as_deref()),
+        } => commands::restore::run(&path, drive.as_deref(), prefix.as_deref(), dry_run, force, keep_archive),
+        Commands::List { drive, prefix } => commands::list::run(drive.as_deref(), prefix.as_deref()),
+        Commands::Status { path, drive, prefix } => commands::status::run(&path, drive.as_deref(), prefix.as_deref()),
+        Commands::Verify { drive, prefix } => commands::verify::run(drive.as_deref(), prefix.as_deref()),
+        Commands::Config { action } => commands::config::run(action),
     };
 
     if let Err(e) = result {

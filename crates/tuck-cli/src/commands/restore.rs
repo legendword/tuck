@@ -3,6 +3,7 @@ use std::path::Path;
 use colored::Colorize;
 use dialoguer::Confirm;
 use humansize::{format_size, BINARY};
+use tuck_core::config::Config;
 use tuck_core::drive;
 use tuck_core::error::TuckError;
 use tuck_core::restore;
@@ -10,11 +11,16 @@ use tuck_core::restore;
 pub fn run(
     path: &str,
     drive_name: Option<&str>,
+    prefix: Option<&str>,
     dry_run: bool,
     force: bool,
     keep_archive: bool,
 ) -> Result<(), TuckError> {
-    let drive = drive::resolve_drive(drive_name)?;
+    let config = Config::load()?;
+    let drive = drive::resolve_drive(
+        config.resolve_drive_name(drive_name),
+        config.resolve_prefix(prefix),
+    )?;
     let plan = restore::plan_restore(Path::new(path), &drive)?;
 
     let kind = if plan.entry.is_directory {
