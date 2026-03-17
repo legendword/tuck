@@ -8,6 +8,8 @@ use tuck_core::drive;
 use tuck_core::error::TuckError;
 use tuck_core::restore;
 
+use super::CliProgress;
+
 pub fn run(
     path: &str,
     drive_name: Option<&str>,
@@ -73,9 +75,8 @@ pub fn run(
         return Err(TuckError::Cancelled);
     }
 
-    print!("Verifying checksums and restoring... ");
-    restore::execute_restore(&plan, keep_archive)?;
-    println!("{}", "done.".green());
+    let progress = CliProgress::new();
+    restore::execute_restore(&plan, keep_archive, Some(&progress))?;
 
     println!("{}", "Restored successfully.".green().bold());
     Ok(())

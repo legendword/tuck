@@ -8,6 +8,7 @@ use crate::drive::{archive_path_on_drive, DriveInfo};
 use crate::error::{IoContext, TuckError, TuckResult};
 use crate::manifest::{ArchiveEntry, FileChecksum, Manifest};
 use crate::pending::{PendingKind, PendingOperation};
+use crate::progress::Progress;
 
 /// Information about a planned add operation.
 #[derive(Debug)]
@@ -54,7 +55,10 @@ pub fn plan_add(path: &Path, drive: &DriveInfo) -> TuckResult<AddPlan> {
 
 /// Execute an add: copy files to drive, verify checksums, update manifest.
 /// Returns the checksums of the archived files.
-pub fn execute_add(plan: &AddPlan) -> TuckResult<Vec<FileChecksum>> {
+pub fn execute_add(
+    plan: &AddPlan,
+    progress: Option<&dyn Progress>,
+) -> TuckResult<Vec<FileChecksum>> {
     // Ensure root directory exists (needed when using --prefix)
     std::fs::create_dir_all(&plan.drive_root).io_context(&plan.drive_root)?;
 
@@ -68,13 +72,31 @@ pub fn execute_add(plan: &AddPlan) -> TuckResult<Vec<FileChecksum>> {
     PendingOperation::write(&plan.drive_root, &pending)?;
 
     // Step 1: Hash source files before copy
-    let source_checksums = checksum::hash_path(&plan.original_path)?;
+    if let Some(p) = progress {
+        p.start_phase("Hashing source", plan.size_bytes);
+    }
+    let source_checksums = checksum::hash_path(&plan.original_path, progress)?;
+    if let Some(p) = progress {
+        p.finish_phase();
+    }
 
     // Step 2: Copy to drive
-    copy::copy_recursive(&plan.original_path, &plan.archive_path)?;
+    if let Some(p) = progress {
+        p.start_phase("Copying to drive", plan.size_bytes);
+    }
+    copy::copy_recursive(&plan.original_path, &plan.archive_path, progress)?;
+    if let Some(p) = progress {
+        p.finish_phase();
+    }
 
     // Step 3: Hash destination files after copy
-    let dest_checksums = checksum::hash_path(&plan.archive_path)?;
+    if let Some(p) = progress {
+        p.start_phase("Verifying copy", plan.size_bytes);
+    }
+    let dest_checksums = checksum::hash_path(&plan.archive_path, progress)?;
+    if let Some(p) = progress {
+        p.finish_phase();
+    }
 
     // Step 4: Compare checksums
     if source_checksums.len() != dest_checksums.len() {

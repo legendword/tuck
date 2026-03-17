@@ -8,6 +8,7 @@ use crate::drive::{archive_path_on_drive, DriveInfo};
 use crate::error::{TuckError, TuckResult};
 use crate::manifest::{ArchiveEntry, Manifest};
 use crate::pending::{PendingKind, PendingOperation};
+use crate::progress::Progress;
 
 /// Information about a planned restore operation.
 #[derive(Debug)]
@@ -63,15 +64,23 @@ pub fn plan_restore(path: &Path, drive: &DriveInfo) -> TuckResult<RestorePlan> {
 }
 
 /// Execute a restore: verify archive checksums, copy back to original location, update manifest.
-pub fn execute_restore(plan: &RestorePlan, keep_archive: bool) -> TuckResult<()> {
+pub fn execute_restore(
+    plan: &RestorePlan,
+    keep_archive: bool,
+    progress: Option<&dyn Progress>,
+) -> TuckResult<()> {
     // Step 1: Verify archive checksums before restoring
+    if let Some(p) = progress {
+        p.start_phase("Verifying archive", plan.entry.size_bytes);
+    }
     for cs in &plan.entry.checksums {
         let file_path = if cs.relative_path.is_empty() {
             plan.archive_path.clone()
         } else {
             plan.archive_path.join(&cs.relative_path)
         };
-        if !checksum::verify_checksum(&file_path, &cs.hash)? {
+        if !checksum::verify_checksum_with_progress(&file_path, &cs.hash, cs.size_bytes, progress)?
+        {
             let actual = checksum::hash_file(&file_path)?;
             return Err(TuckError::ChecksumMismatch {
                 path: file_path,
@@ -79,6 +88,9 @@ pub fn execute_restore(plan: &RestorePlan, keep_archive: bool) -> TuckResult<()>
                 actual,
             });
         }
+    }
+    if let Some(p) = progress {
+        p.finish_phase();
     }
 
     // Write pending marker before starting the copy
@@ -91,7 +103,13 @@ pub fn execute_restore(plan: &RestorePlan, keep_archive: bool) -> TuckResult<()>
     PendingOperation::write(&plan.drive_root, &pending)?;
 
     // Step 2: Copy back to original location
-    copy::copy_recursive(&plan.archive_path, &plan.original_path)?;
+    if let Some(p) = progress {
+        p.start_phase("Restoring files", plan.entry.size_bytes);
+    }
+    copy::copy_recursive(&plan.archive_path, &plan.original_path, progress)?;
+    if let Some(p) = progress {
+        p.finish_phase();
+    }
 
     // Step 3: Update manifest — remove entry
     let mut manifest = Manifest::load(&plan.drive_root)?;
@@ -100,7 +118,13 @@ pub fn execute_restore(plan: &RestorePlan, keep_archive: bool) -> TuckResult<()>
 
     // Step 4: Optionally remove archive copy
     if !keep_archive {
+        if let Some(p) = progress {
+            p.start_phase("Removing archive copy", 0);
+        }
         copy::remove_path(&plan.archive_path)?;
+        if let Some(p) = progress {
+            p.finish_phase();
+        }
     }
 
     // Clear pending marker — operation completed successfully

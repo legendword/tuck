@@ -8,6 +8,8 @@ use tuck_core::config::Config;
 use tuck_core::drive;
 use tuck_core::error::TuckError;
 
+use super::CliProgress;
+
 pub fn run(
     path: &str,
     drive_name: Option<&str>,
@@ -61,9 +63,8 @@ pub fn run(
         }
     }
 
-    print!("Copying and verifying checksums... ");
-    let checksums = archive::execute_add(&plan)?;
-    println!("{}", "done.".green());
+    let progress = CliProgress::new();
+    let checksums = archive::execute_add(&plan, Some(&progress))?;
 
     println!(
         "  {} file(s) archived, all checksums verified.",

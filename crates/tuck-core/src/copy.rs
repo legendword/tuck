@@ -5,15 +5,24 @@ use filetime::FileTime;
 use walkdir::WalkDir;
 
 use crate::error::{IoContext, TuckError, TuckResult};
+use crate::progress::Progress;
 
 /// Recursively copy a file or directory from `src` to `dst`, preserving modification times.
 /// Symlinks within directories are skipped with a warning.
 /// The parent directory of `dst` must exist.
-pub fn copy_recursive(src: &Path, dst: &Path) -> TuckResult<()> {
+pub fn copy_recursive(
+    src: &Path,
+    dst: &Path,
+    progress: Option<&dyn Progress>,
+) -> TuckResult<()> {
     if src.is_file() {
         copy_file_with_metadata(src, dst)?;
+        if let Some(p) = progress {
+            let size = fs::metadata(src).io_context(src)?.len();
+            p.advance(size);
+        }
     } else if src.is_dir() {
-        copy_dir_recursive(src, dst)?;
+        copy_dir_recursive(src, dst, progress)?;
     } else {
         return Err(TuckError::PathNotFound(src.to_path_buf()));
     }
@@ -38,7 +47,11 @@ fn copy_file_with_metadata(src: &Path, dst: &Path) -> TuckResult<()> {
 }
 
 /// Recursively copy a directory.
-fn copy_dir_recursive(src: &Path, dst: &Path) -> TuckResult<()> {
+fn copy_dir_recursive(
+    src: &Path,
+    dst: &Path,
+    progress: Option<&dyn Progress>,
+) -> TuckResult<()> {
     for entry in WalkDir::new(src).follow_links(false).sort_by_file_name() {
         let entry = entry.map_err(|e| {
             let path = e.path().unwrap_or(src).to_path_buf();
@@ -70,6 +83,13 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> TuckResult<()> {
             filetime::set_file_mtime(&target, mtime).io_context(&target)?;
         } else if entry.file_type().is_file() {
             copy_file_with_metadata(entry.path(), &target)?;
+            if let Some(p) = progress {
+                let size = entry.metadata().map_err(|e| TuckError::Io {
+                    source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+                    path: entry.path().to_path_buf(),
+                })?.len();
+                p.advance(size);
+            }
         }
     }
     Ok(())
@@ -125,7 +145,7 @@ mod tests {
         let dst = dir.path().join("dest.txt");
         fs::write(&src, "hello world").unwrap();
 
-        copy_recursive(&src, &dst).unwrap();
+        copy_recursive(&src, &dst, None).unwrap();
 
         assert_eq!(fs::read_to_string(&dst).unwrap(), "hello world");
 
@@ -149,7 +169,7 @@ mod tests {
         fs::create_dir(src.join("sub")).unwrap();
         fs::write(src.join("sub/b.txt"), "bbb").unwrap();
 
-        copy_recursive(&src, &dst).unwrap();
+        copy_recursive(&src, &dst, None).unwrap();
 
         assert_eq!(fs::read_to_string(dst.join("a.txt")).unwrap(), "aaa");
         assert_eq!(fs::read_to_string(dst.join("sub/b.txt")).unwrap(), "bbb");

@@ -4,6 +4,8 @@ use tuck_core::drive;
 use tuck_core::error::TuckError;
 use tuck_core::verify;
 
+use super::CliProgress;
+
 pub fn run(drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckError> {
     let config = Config::load()?;
     let drive = drive::resolve_drive(
@@ -18,7 +20,8 @@ pub fn run(drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckErr
         drive.name
     );
 
-    let results = verify::verify_all(&drive)?;
+    let progress = CliProgress::new();
+    let results = verify::verify_all(&drive, Some(&progress))?;
 
     if results.is_empty() {
         println!("No archived entries to verify.");

@@ -7,8 +7,58 @@ pub mod verify;
 
 use colored::Colorize;
 use dialoguer::Confirm;
+use indicatif::{ProgressBar, ProgressStyle};
 use tuck_core::error::TuckError;
 use tuck_core::pending::{PendingKind, PendingOperation};
+use tuck_core::progress::Progress;
+
+/// Progress bar wrapper that implements tuck_core::progress::Progress.
+pub struct CliProgress {
+    bar: ProgressBar,
+}
+
+impl CliProgress {
+    pub fn new() -> Self {
+        Self {
+            bar: ProgressBar::hidden(),
+        }
+    }
+}
+
+impl Progress for CliProgress {
+    fn start_phase(&self, phase: &str, total_bytes: u64) {
+        if total_bytes == 0 {
+            // Use a spinner for indeterminate operations (e.g. deleting)
+            self.bar.set_style(
+                ProgressStyle::default_spinner()
+                    .template("  {spinner:.cyan} {msg}")
+                    .unwrap(),
+            );
+            self.bar.set_message(format!("{}...", phase));
+            self.bar.set_length(0);
+            self.bar.enable_steady_tick(std::time::Duration::from_millis(100));
+        } else {
+            self.bar.set_style(
+                ProgressStyle::default_bar()
+                    .template("  {msg} [{wide_bar:.cyan/dim}] {bytes}/{total_bytes} ({eta})")
+                    .unwrap()
+                    .progress_chars("=> "),
+            );
+            self.bar.set_message(phase.to_string());
+            self.bar.set_length(total_bytes);
+            self.bar.set_position(0);
+            self.bar.reset_eta();
+        }
+    }
+
+    fn advance(&self, bytes: u64) {
+        self.bar.inc(bytes);
+    }
+
+    fn finish_phase(&self) {
+        self.bar.finish_and_clear();
+    }
+}
 
 /// Check for a pending (interrupted) operation on the drive root.
 /// If found, prompt the user to clean up before continuing.
@@ -64,7 +114,17 @@ pub fn check_pending(drive_root: &std::path::Path) -> Result<(), TuckError> {
         ));
     }
 
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .template("  {spinner:.cyan} Cleaning up...")
+            .unwrap(),
+    );
+    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
+
     PendingOperation::cleanup(drive_root, &op)?;
+
+    spinner.finish_and_clear();
     println!("{}\n", "Cleaned up successfully.".green());
     Ok(())
 }

@@ -6,6 +6,7 @@ use walkdir::WalkDir;
 
 use crate::error::{IoContext, TuckResult};
 use crate::manifest::FileChecksum;
+use crate::progress::Progress;
 
 const CHUNK_SIZE: usize = 64 * 1024; // 64 KB
 
@@ -26,7 +27,10 @@ pub fn hash_file(path: &Path) -> TuckResult<String> {
 
 /// Compute checksums for a directory, returning a FileChecksum per regular file.
 /// Symlinks are skipped. Paths are relative to `dir`.
-pub fn hash_directory(dir: &Path) -> TuckResult<Vec<FileChecksum>> {
+pub fn hash_directory(
+    dir: &Path,
+    progress: Option<&dyn Progress>,
+) -> TuckResult<Vec<FileChecksum>> {
     let mut checksums = Vec::new();
     for entry in WalkDir::new(dir).follow_links(false).sort_by_file_name() {
         let entry = entry.map_err(|e| {
@@ -63,21 +67,28 @@ pub fn hash_directory(dir: &Path) -> TuckResult<Vec<FileChecksum>> {
             hash,
             size_bytes: size,
         });
+        if let Some(p) = progress {
+            p.advance(size);
+        }
     }
     Ok(checksums)
 }
 
 /// Hash a path — delegates to hash_file or hash_directory.
-pub fn hash_path(path: &Path) -> TuckResult<Vec<FileChecksum>> {
+pub fn hash_path(path: &Path, progress: Option<&dyn Progress>) -> TuckResult<Vec<FileChecksum>> {
     if path.is_dir() {
-        hash_directory(path)
+        hash_directory(path, progress)
     } else {
         let meta = std::fs::metadata(path).io_context(path)?;
         let hash = hash_file(path)?;
+        let size = meta.len();
+        if let Some(p) = progress {
+            p.advance(size);
+        }
         Ok(vec![FileChecksum {
             relative_path: String::new(),
             hash,
-            size_bytes: meta.len(),
+            size_bytes: size,
         }])
     }
 }
@@ -85,6 +96,20 @@ pub fn hash_path(path: &Path) -> TuckResult<Vec<FileChecksum>> {
 /// Verify that a file on disk matches an expected checksum.
 pub fn verify_checksum(file_path: &Path, expected: &str) -> TuckResult<bool> {
     let actual = hash_file(file_path)?;
+    Ok(actual == expected)
+}
+
+/// Verify a checksum and report progress.
+pub fn verify_checksum_with_progress(
+    file_path: &Path,
+    expected: &str,
+    size: u64,
+    progress: Option<&dyn Progress>,
+) -> TuckResult<bool> {
+    let actual = hash_file(file_path)?;
+    if let Some(p) = progress {
+        p.advance(size);
+    }
     Ok(actual == expected)
 }
 
@@ -124,7 +149,7 @@ mod tests {
         fs::create_dir(dir.path().join("sub")).unwrap();
         fs::write(dir.path().join("sub/b.txt"), "bbb").unwrap();
 
-        let checksums = hash_directory(dir.path()).unwrap();
+        let checksums = hash_directory(dir.path(), None).unwrap();
         assert_eq!(checksums.len(), 2);
 
         let paths: Vec<&str> = checksums.iter().map(|c| c.relative_path.as_str()).collect();
@@ -138,7 +163,7 @@ mod tests {
         let file = dir.path().join("test.txt");
         fs::write(&file, "content").unwrap();
 
-        let checksums = hash_path(&file).unwrap();
+        let checksums = hash_path(&file, None).unwrap();
         assert_eq!(checksums.len(), 1);
         assert_eq!(checksums[0].relative_path, "");
     }

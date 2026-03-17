@@ -4,6 +4,7 @@ use crate::checksum;
 use crate::drive::{archive_path_on_drive, DriveInfo};
 use crate::error::{TuckError, TuckResult};
 use crate::manifest::{ArchiveEntry, Manifest};
+use crate::progress::Progress;
 
 /// Result of verifying a single archive entry.
 #[derive(Debug)]
@@ -28,7 +29,11 @@ impl VerifyResult {
 }
 
 /// Verify a single archive entry's checksums against the files on drive.
-pub fn verify_entry(entry: &ArchiveEntry, drive: &DriveInfo) -> TuckResult<VerifyResult> {
+pub fn verify_entry(
+    entry: &ArchiveEntry,
+    drive: &DriveInfo,
+    progress: Option<&dyn Progress>,
+) -> TuckResult<VerifyResult> {
     let archive_base = archive_path_on_drive(&drive.root_path, &entry.original_path);
     let mut passed = 0;
     let mut failed = Vec::new();
@@ -50,6 +55,9 @@ pub fn verify_entry(entry: &ArchiveEntry, drive: &DriveInfo) -> TuckResult<Verif
         }
 
         let actual_hash = checksum::hash_file(&file_path)?;
+        if let Some(p) = progress {
+            p.advance(cs.size_bytes);
+        }
         if actual_hash == cs.hash {
             passed += 1;
         } else {
@@ -70,12 +78,26 @@ pub fn verify_entry(entry: &ArchiveEntry, drive: &DriveInfo) -> TuckResult<Verif
 }
 
 /// Verify all entries in the manifest.
-pub fn verify_all(drive: &DriveInfo) -> TuckResult<Vec<VerifyResult>> {
+pub fn verify_all(
+    drive: &DriveInfo,
+    progress: Option<&dyn Progress>,
+) -> TuckResult<Vec<VerifyResult>> {
     let manifest = Manifest::load(&drive.root_path)?;
+
+    if let Some(p) = progress {
+        let total: u64 = manifest.entries.iter().map(|e| e.size_bytes).sum();
+        p.start_phase("Verifying checksums", total);
+    }
+
     let mut results = Vec::new();
     for entry in &manifest.entries {
-        results.push(verify_entry(entry, drive)?);
+        results.push(verify_entry(entry, drive, progress)?);
     }
+
+    if let Some(p) = progress {
+        p.finish_phase();
+    }
+
     Ok(results)
 }
 
