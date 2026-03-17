@@ -1,6 +1,6 @@
 # Tuck
 
-A macOS CLI tool for intentionally archiving files and folders to an external drive, freeing up local space, and reliably restoring them to their exact original paths later.
+A macOS CLI tool for intentionally archiving files and folders to an external drive, freeing up local space, and reliably restoring them to their exact original paths later. **macOS only** (relies on `/Volumes/` for drive detection).
 
 Unlike backup tools (which use retention policies that purge old snapshots) or sync tools (which mirror deletions), Tuck treats your external drive as permanent, intentional storage — files stay archived until you explicitly restore them.
 
@@ -136,8 +136,11 @@ tuck/
         error.rs           # TuckError, TuckResult, IoContext
         manifest.rs        # Manifest load/save, entry management
         checksum.rs        # BLAKE3 hashing
+        config.rs          # Persistent config (~/.config/tuck/config.json)
         drive.rs           # /Volumes/ scanning, drive resolution
         copy.rs            # Recursive copy with metadata preservation
+        pending.rs         # Interrupted operation recovery
+        progress.rs        # Progress trait for byte-level reporting
         archive.rs         # Plan and execute archive operations
         restore.rs         # Plan and execute restore operations
         verify.rs          # Checksum verification, status checks
@@ -156,4 +159,4 @@ The workspace is split into `tuck-core` (library) and `tuck-cli` (binary) so the
 
 ## License
 
-TBD
+[MIT](LICENSE)
