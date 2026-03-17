@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::error::{TuckError, TuckResult};
+use crate::error::{IoContext, TuckError, TuckResult};
 
 const VOLUMES_DIR: &str = "/Volumes";
 
@@ -108,6 +108,40 @@ pub fn resolve_drive(name: Option<&str>, prefix: Option<&str>) -> TuckResult<Dri
     Ok(drive.with_prefix(prefix))
 }
 
+/// Query available disk space (in bytes) for the filesystem containing `path`.
+pub fn available_space(path: &Path) -> TuckResult<u64> {
+    fs2::available_space(path).io_context(path)
+}
+
+/// Check that `path` has at least `needed_bytes` of free space.
+/// Returns `Ok(())` if sufficient, or `Err(InsufficientSpace)` otherwise.
+pub fn check_space(path: &Path, needed_bytes: u64) -> TuckResult<()> {
+    let available = available_space(path)?;
+    if available < needed_bytes {
+        return Err(TuckError::InsufficientSpace {
+            path: path.to_path_buf(),
+            needed: humanize_bytes(needed_bytes),
+            available: humanize_bytes(available),
+        });
+    }
+    Ok(())
+}
+
+fn humanize_bytes(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = 1024 * KIB;
+    const GIB: u64 = 1024 * MIB;
+    if bytes >= GIB {
+        format!("{:.1} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.1} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.1} KiB", bytes as f64 / KIB as f64)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
 /// Compute the archive path on the drive for a given original (canonicalized) path.
 /// Strips leading "/" and joins with the drive mount path.
 /// e.g., `/Users/foo/bar.txt` -> `/Volumes/Drive/Users/foo/bar.txt`
@@ -156,6 +190,32 @@ mod tests {
         let prefixed = drive.with_prefix(Some("tuck-macbook"));
         assert_eq!(prefixed.mount_path, PathBuf::from("/Volumes/MyDrive"));
         assert_eq!(prefixed.root_path, PathBuf::from("/Volumes/MyDrive/tuck-macbook"));
+    }
+
+    #[test]
+    fn test_check_space_sufficient() {
+        // Current directory should have plenty of space for 1 byte
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(check_space(tmp.path(), 1).is_ok());
+    }
+
+    #[test]
+    fn test_check_space_insufficient() {
+        // Request an absurdly large amount of space
+        let tmp = tempfile::tempdir().unwrap();
+        let result = check_space(tmp.path(), u64::MAX);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, TuckError::InsufficientSpace { .. }));
+    }
+
+    #[test]
+    fn test_humanize_bytes() {
+        assert_eq!(humanize_bytes(500), "500 B");
+        assert_eq!(humanize_bytes(1024), "1.0 KiB");
+        assert_eq!(humanize_bytes(1536), "1.5 KiB");
+        assert_eq!(humanize_bytes(1048576), "1.0 MiB");
+        assert_eq!(humanize_bytes(1073741824), "1.0 GiB");
     }
 
     #[test]

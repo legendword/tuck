@@ -4,7 +4,7 @@ use chrono::Utc;
 
 use crate::checksum;
 use crate::copy;
-use crate::drive::{archive_path_on_drive, DriveInfo};
+use crate::drive::{self, archive_path_on_drive, DriveInfo};
 use crate::error::{IoContext, TuckError, TuckResult};
 use crate::manifest::{ArchiveEntry, FileChecksum, Manifest};
 use crate::pending::{PendingKind, PendingOperation};
@@ -42,6 +42,9 @@ pub fn plan_add(path: &Path, drive: &DriveInfo) -> TuckResult<AddPlan> {
 
     let is_directory = original_path.is_dir();
     let size_bytes = copy::path_size(&original_path)?;
+
+    // Check that the drive has enough free space
+    drive::check_space(&drive.mount_path, size_bytes)?;
 
     Ok(AddPlan {
         original_path,

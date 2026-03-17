@@ -28,6 +28,13 @@ pub enum TuckError {
     #[error("Path already exists: {0}")]
     AlreadyExists(PathBuf),
 
+    #[error("Not enough space on {path}: need {needed}, available {available}")]
+    InsufficientSpace {
+        path: PathBuf,
+        needed: String,
+        available: String,
+    },
+
     #[error("Checksum mismatch for {path}: expected {expected}, got {actual}")]
     ChecksumMismatch {
         path: PathBuf,
@@ -55,6 +62,7 @@ impl TuckError {
             TuckError::PathNotFound(_) => 1,
             TuckError::NotArchived(_) => 1,
             TuckError::AlreadyExists(_) => 1,
+            TuckError::InsufficientSpace { .. } => 2,
             TuckError::ChecksumMismatch { .. } => 3,
             TuckError::Manifest(_) => 1,
             TuckError::Cancelled => 4,

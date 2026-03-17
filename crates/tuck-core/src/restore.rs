@@ -4,7 +4,7 @@ use chrono::Utc;
 
 use crate::checksum;
 use crate::copy;
-use crate::drive::{archive_path_on_drive, DriveInfo};
+use crate::drive::{self, archive_path_on_drive, DriveInfo};
 use crate::error::{TuckError, TuckResult};
 use crate::manifest::{ArchiveEntry, Manifest};
 use crate::pending::{PendingKind, PendingOperation};
@@ -53,6 +53,19 @@ pub fn plan_restore(path: &Path, drive: &DriveInfo) -> TuckResult<RestorePlan> {
     }
 
     let local_exists = original_path.exists();
+
+    // Check that the local filesystem has enough free space.
+    // Use the nearest existing ancestor since the target may not exist yet.
+    let space_check_path = if local_exists {
+        original_path.clone()
+    } else {
+        original_path
+            .ancestors()
+            .find(|p| p.exists())
+            .unwrap_or(Path::new("/"))
+            .to_path_buf()
+    };
+    drive::check_space(&space_check_path, entry.size_bytes)?;
 
     Ok(RestorePlan {
         original_path,
