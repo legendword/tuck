@@ -8,4 +8,5 @@ pub mod manifest;
 pub mod pending;
 pub mod progress;
 pub mod restore;
+pub mod update;
 pub mod verify;

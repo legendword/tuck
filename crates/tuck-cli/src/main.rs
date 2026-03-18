@@ -5,7 +5,7 @@ use std::process;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "tuck", about = "Archive files to an external drive and restore them later")]
+#[command(name = "tuck", version, about = "Archive files to an external drive and restore them later")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -82,6 +82,15 @@ enum Commands {
         #[arg(long)]
         prefix: Option<String>,
     },
+    /// Update tuck to the latest version
+    Update {
+        /// Only check for updates, don't install
+        #[arg(long)]
+        check: bool,
+        /// Skip confirmation prompt
+        #[arg(long)]
+        force: bool,
+    },
     /// View or set default configuration
     Config {
         #[command(subcommand)]
@@ -128,6 +137,7 @@ fn main() {
         Commands::List { drive, prefix } => commands::list::run(drive.as_deref(), prefix.as_deref()),
         Commands::Status { path, drive, prefix } => commands::status::run(&path, drive.as_deref(), prefix.as_deref()),
         Commands::Verify { drive, prefix } => commands::verify::run(drive.as_deref(), prefix.as_deref()),
+        Commands::Update { check, force } => commands::update::run(check, force),
         Commands::Config { action } => commands::config::run(action),
     };
 

@@ -6,6 +6,20 @@ Unlike backup tools (which use retention policies that purge old snapshots) or s
 
 ## Install
 
+```bash
+curl -fsSL https://raw.githubusercontent.com/legendword/tuck/main/install.sh | sh
+```
+
+This downloads the latest universal binary from [GitHub Releases](https://github.com/legendword/tuck/releases) and installs it to `/usr/local/bin`.
+
+To update to the latest version:
+
+```bash
+tuck update
+```
+
+### From source
+
 Requires [Rust](https://rustup.rs/).
 
 ```bash
@@ -66,6 +80,13 @@ tuck verify
 
 Checks BLAKE3 checksums of all archived files on the drive.
 
+### Update
+
+```bash
+tuck update          # download and install the latest version
+tuck update --check  # check for updates without installing
+```
+
 ### Using a prefix
 
 If your external drive contains other files, or you share a drive between multiple Macs, use `--prefix` to scope all tuck data under a subfolder:
@@ -99,7 +120,9 @@ Config is stored at `~/.config/tuck/config.json`.
 - **Path mapping**: Strips leading `/` and mirrors the directory structure on the drive. `/Users/you/Documents/foo.txt` → `/Volumes/Drive/Users/you/Documents/foo.txt`. With `--prefix myprefix`, the root becomes `/Volumes/Drive/myprefix/`.
 - **Checksums**: BLAKE3, streamed in 64KB chunks. Files are hashed before copy, hashed again after copy, and compared. Stored per-file for granular verification.
 - **Manifest**: A `.tuck-manifest.json` file on the drive root tracks all archived entries with original paths, timestamps, sizes, and checksums. Written atomically (write `.tmp`, then rename).
+- **Disk space**: Both `add` and `restore` check available disk space before starting and fail early if insufficient.
 - **Symlinks**: Skipped with a warning (v1).
+- **Self-update**: `tuck update` checks GitHub Releases for a newer version, downloads the binary, and atomically replaces the current executable.
 
 ## Testing locally
 
@@ -129,6 +152,9 @@ cargo test
 ```
 tuck/
   Cargo.toml              # Workspace root
+  install.sh              # One-line install script
+  .github/workflows/
+    release.yml            # CI: build universal binary, publish GitHub Release
   crates/
     tuck-core/             # Library — all logic, no CLI concerns
       src/
@@ -137,12 +163,13 @@ tuck/
         manifest.rs        # Manifest load/save, entry management
         checksum.rs        # BLAKE3 hashing
         config.rs          # Persistent config (~/.config/tuck/config.json)
-        drive.rs           # /Volumes/ scanning, drive resolution
+        drive.rs           # /Volumes/ scanning, drive resolution, disk space checks
         copy.rs            # Recursive copy with metadata preservation
         pending.rs         # Interrupted operation recovery
         progress.rs        # Progress trait for byte-level reporting
         archive.rs         # Plan and execute archive operations
         restore.rs         # Plan and execute restore operations
+        update.rs          # Self-update via GitHub Releases
         verify.rs          # Checksum verification, status checks
     tuck-cli/              # Binary — CLI interface only
       src/
@@ -152,6 +179,7 @@ tuck/
           restore.rs
           list.rs
           status.rs
+          update.rs
           verify.rs
 ```
 
