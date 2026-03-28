@@ -22,7 +22,8 @@ pub struct AddPlan {
 }
 
 /// Plan an add operation: validate paths, compute sizes, check for conflicts.
-pub fn plan_add(path: &Path, drive: &DriveInfo) -> TuckResult<AddPlan> {
+/// If `force` is true, allow replacing an existing archive entry.
+pub fn plan_add(path: &Path, drive: &DriveInfo, force: bool) -> TuckResult<AddPlan> {
     // Canonicalize the source path
     let original_path = path
         .canonicalize()
@@ -37,7 +38,9 @@ pub fn plan_add(path: &Path, drive: &DriveInfo) -> TuckResult<AddPlan> {
     // Check if already archived in manifest
     let manifest = Manifest::load(&drive.root_path)?;
     if manifest.find_entry(&original_path).is_some() {
-        return Err(TuckError::AlreadyExists(original_path));
+        if !force {
+            return Err(TuckError::AlreadyExists(original_path));
+        }
     }
 
     let is_directory = original_path.is_dir();
@@ -64,6 +67,17 @@ pub fn execute_add(
 ) -> TuckResult<Vec<FileChecksum>> {
     // Ensure root directory exists (needed when using --prefix)
     std::fs::create_dir_all(&plan.drive_root).io_context(&plan.drive_root)?;
+
+    // Remove existing archive if replacing
+    if plan.archive_path.exists() {
+        copy::remove_path(&plan.archive_path)?;
+    }
+    // Remove existing manifest entry if replacing
+    let mut manifest = Manifest::load(&plan.drive_root)?;
+    if manifest.find_entry(&plan.original_path).is_some() {
+        manifest.remove_entry(&plan.original_path)?;
+        manifest.save(&plan.drive_root)?;
+    }
 
     // Write pending marker before starting
     let pending = PendingOperation {
@@ -142,4 +156,87 @@ pub fn execute_add(
 /// Delete the local copy of an archived path.
 pub fn delete_local(original_path: &Path) -> TuckResult<()> {
     copy::remove_path(original_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn fake_drive(tmp: &TempDir) -> DriveInfo {
+        DriveInfo {
+            name: "TestDrive".to_string(),
+            mount_path: tmp.path().to_path_buf(),
+            root_path: tmp.path().to_path_buf(),
+        }
+    }
+
+    #[test]
+    fn test_plan_add_already_exists_without_force() {
+        let drive_dir = TempDir::new().unwrap();
+        let source_dir = TempDir::new().unwrap();
+        let file = source_dir.path().join("test.txt");
+        fs::write(&file, "hello").unwrap();
+
+        let drive = fake_drive(&drive_dir);
+
+        // First add succeeds
+        let plan = plan_add(&file, &drive, false).unwrap();
+        execute_add(&plan, None).unwrap();
+
+        // Second add without force fails
+        let err = plan_add(&file, &drive, false).unwrap_err();
+        assert!(matches!(err, TuckError::AlreadyExists(_)));
+    }
+
+    #[test]
+    fn test_plan_add_already_exists_with_force() {
+        let drive_dir = TempDir::new().unwrap();
+        let source_dir = TempDir::new().unwrap();
+        let file = source_dir.path().join("test.txt");
+        fs::write(&file, "hello").unwrap();
+
+        let drive = fake_drive(&drive_dir);
+
+        // First add
+        let plan = plan_add(&file, &drive, false).unwrap();
+        execute_add(&plan, None).unwrap();
+
+        // Second add with force succeeds
+        let plan = plan_add(&file, &drive, true).unwrap();
+        assert!(plan.original_path.exists());
+    }
+
+    #[test]
+    fn test_force_add_replaces_archive_content() {
+        let drive_dir = TempDir::new().unwrap();
+        let source_dir = TempDir::new().unwrap();
+        let file = source_dir.path().join("test.txt");
+        fs::write(&file, "version 1").unwrap();
+
+        let drive = fake_drive(&drive_dir);
+
+        // First add
+        let plan = plan_add(&file, &drive, false).unwrap();
+        let checksums1 = execute_add(&plan, None).unwrap();
+
+        // Modify local file
+        fs::write(&file, "version 2").unwrap();
+
+        // Force add replaces archive
+        let plan = plan_add(&file, &drive, true).unwrap();
+        let checksums2 = execute_add(&plan, None).unwrap();
+
+        // Checksums should differ
+        assert_ne!(checksums1[0].hash, checksums2[0].hash);
+
+        // Manifest should have exactly one entry
+        let manifest = Manifest::load(&drive.root_path).unwrap();
+        assert_eq!(manifest.entries.len(), 1);
+
+        // Archived file should have new content
+        let archived = fs::read_to_string(&plan.archive_path).unwrap();
+        assert_eq!(archived, "version 2");
+    }
 }

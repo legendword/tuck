@@ -32,6 +32,9 @@ enum Commands {
         /// Keep the local copy after archiving
         #[arg(long)]
         keep_local: bool,
+        /// Replace existing archive if already archived
+        #[arg(long)]
+        force: bool,
     },
     /// Restore an archived file or folder to its original location
     Restore {
@@ -125,7 +128,8 @@ fn main() {
             dry_run,
             no_confirm,
             keep_local,
-        } => commands::add::run(&path, drive.as_deref(), prefix.as_deref(), dry_run, no_confirm, keep_local),
+            force,
+        } => commands::add::run(&path, drive.as_deref(), prefix.as_deref(), dry_run, no_confirm, keep_local, force),
         Commands::Restore {
             path,
             drive,

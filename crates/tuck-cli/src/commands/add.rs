@@ -17,6 +17,7 @@ pub fn run(
     dry_run: bool,
     no_confirm: bool,
     keep_local: bool,
+    force: bool,
 ) -> Result<(), TuckError> {
     let config = Config::load()?;
     let drive = drive::resolve_drive(
@@ -24,7 +25,7 @@ pub fn run(
         config.resolve_prefix(prefix),
     )?;
     super::check_pending(&drive.root_path)?;
-    let plan = archive::plan_add(Path::new(path), &drive)?;
+    let plan = archive::plan_add(Path::new(path), &drive, force)?;
 
     let kind = if plan.is_directory { "directory" } else { "file" };
     let size = format_size(plan.size_bytes, BINARY);

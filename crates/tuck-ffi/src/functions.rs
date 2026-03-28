@@ -31,9 +31,9 @@ pub fn resolve_drive(
 }
 
 #[uniffi::export]
-pub fn plan_add(path: String, drive: FfiDriveInfo) -> Result<FfiAddPlan, FfiTuckError> {
+pub fn plan_add(path: String, drive: FfiDriveInfo, force: bool) -> Result<FfiAddPlan, FfiTuckError> {
     let drive_info: tuck_core::drive::DriveInfo = drive.into();
-    archive::plan_add(Path::new(&path), &drive_info)
+    archive::plan_add(Path::new(&path), &drive_info, force)
         .map(Into::into)
         .map_err(Into::into)
 }
