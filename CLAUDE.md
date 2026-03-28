@@ -18,11 +18,10 @@ All tests are in-module `#[cfg(test)]` blocks using `tempfile` for isolation. No
 
 ## Architecture
 
-**Cargo workspace** with two crates:
+**Cargo workspace** with three crates:
 - `tuck-core` (library) — all business logic, no UI concerns. Returns `TuckResult<T>` everywhere.
 - `tuck-cli` (binary) — thin CLI layer using clap, colored output, dialoguer prompts. Dispatches to `tuck-core`.
-
-This split exists so `tuck-core` can later be wrapped via FFI for a Swift/macOS GUI.
+- `tuck-ffi` (staticlib) — UniFFI wrapper exposing `tuck-core` to Swift via FFI. Mirror types convert `PathBuf`→`String`, `DateTime<Utc>`→`i64`, etc. Includes `uniffi-bindgen` binary for generating Swift bindings.
 
 ### Key modules in tuck-core
 
@@ -39,6 +38,22 @@ This split exists so `tuck-core` can later be wrapped via FFI for a Swift/macOS 
 - `update.rs` — self-update via GitHub Releases API. `check_for_update` compares local version against latest release. `execute_update` downloads the binary with progress reporting and atomically replaces the current executable. Uses `ureq` for HTTP.
 - `verify.rs` — `verify_entry`/`verify_all` check stored checksums against files on drive
 
+### FFI layer (tuck-ffi)
+
+- `types.rs` — `Ffi*` mirror structs with `#[derive(uniffi::Record)]` and `From` impls in both directions
+- `error.rs` — `FfiTuckError` enum with `#[derive(uniffi::Error)]`, converts from `TuckError`
+- `progress.rs` — `FfiProgress` callback interface (`#[uniffi::export(callback_interface)]`) and `ProgressBridge` that implements core's `Progress` trait
+- `functions.rs` — `#[uniffi::export]` free functions: `list_drives`, `resolve_drive`, `plan_add`, `execute_add`, `delete_local`, `plan_restore`, `execute_restore`, `load_manifest_entries`
+
+### macOS app (TuckApp/)
+
+SwiftUI app (macOS 14.0+, no sandbox) in `TuckApp/`. Uses xcodegen (`project.yml`) to generate the Xcode project. Links against `libtuck_ffi.a` and the generated Swift bindings in `TuckApp/Generated/`.
+
+- `TuckService.swift` — `@Observable` model wrapping FFI calls
+- `ProgressReporter.swift` — thread-safe `FfiProgress` implementation
+- Views: `ContentView` (NavigationSplitView), `SidebarView` (searchable list), `DetailView`, `DrivePicker`, `ProgressOverlay`
+- Long-running FFI calls run on background threads via `Task.detached`
+
 ### CLI commands (tuck-cli)
 
 `add`, `restore`, `list`, `status`, `verify`, `update`, `config` — each in its own file under `src/commands/`. Shared helpers in `commands/mod.rs` include `CliProgress` (indicatif wrapper implementing `Progress` trait) and `check_pending` (detects interrupted operations).
@@ -48,6 +63,16 @@ This split exists so `tuck-core` can later be wrapped via FFI for a Swift/macOS 
 - **GitHub Actions** (`.github/workflows/release.yml`) — on `v*` tag push, builds a universal macOS binary (aarch64 + x86_64 via `lipo`), publishes to GitHub Releases as `tuck-macos-universal`.
 - **Install script** (`install.sh`) — `curl -fsSL .../install.sh | sh` downloads the latest release binary to `/usr/local/bin`.
 - **Self-update** — `tuck update` checks the GitHub Releases API, downloads the new binary with progress, and atomically replaces itself.
+
+### macOS app build
+
+```bash
+./build-ffi.sh              # build universal staticlib + generate Swift bindings
+cd TuckApp && xcodegen generate  # regenerate .xcodeproj from project.yml
+xcodebuild build -project TuckApp.xcodeproj -scheme TuckApp  # build the app
+```
+
+After changing Rust code, re-run `./build-ffi.sh` before rebuilding in Xcode. The script builds for both `aarch64-apple-darwin` and `x86_64-apple-darwin`, creates a universal binary via `lipo`, and runs `uniffi-bindgen` to generate `TuckApp/Generated/tuck_ffi.swift`.
 
 ## Conventions
 

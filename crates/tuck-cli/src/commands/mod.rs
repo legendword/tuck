@@ -9,55 +9,56 @@ pub mod verify;
 use colored::Colorize;
 use dialoguer::Confirm;
 use indicatif::{ProgressBar, ProgressStyle};
+use std::cell::RefCell;
 use tuck_core::error::TuckError;
 use tuck_core::pending::{PendingKind, PendingOperation};
 use tuck_core::progress::Progress;
 
 /// Progress bar wrapper that implements tuck_core::progress::Progress.
 pub struct CliProgress {
-    bar: ProgressBar,
+    bar: RefCell<ProgressBar>,
 }
 
 impl CliProgress {
     pub fn new() -> Self {
         Self {
-            bar: ProgressBar::hidden(),
+            bar: RefCell::new(ProgressBar::hidden()),
         }
     }
 }
 
 impl Progress for CliProgress {
     fn start_phase(&self, phase: &str, total_bytes: u64) {
+        // Replace the hidden/finished bar with a new visible one
         if total_bytes == 0 {
-            // Use a spinner for indeterminate operations (e.g. deleting)
-            self.bar.set_style(
+            let bar = ProgressBar::new_spinner();
+            bar.set_style(
                 ProgressStyle::default_spinner()
                     .template("  {spinner:.cyan} {msg}")
                     .unwrap(),
             );
-            self.bar.set_message(format!("{}...", phase));
-            self.bar.set_length(0);
-            self.bar.enable_steady_tick(std::time::Duration::from_millis(100));
+            bar.set_message(format!("{}...", phase));
+            bar.enable_steady_tick(std::time::Duration::from_millis(100));
+            *self.bar.borrow_mut() = bar;
         } else {
-            self.bar.set_style(
+            let bar = ProgressBar::new(total_bytes);
+            bar.set_style(
                 ProgressStyle::default_bar()
                     .template("  {msg} [{wide_bar:.cyan/dim}] {bytes}/{total_bytes} ({eta})")
                     .unwrap()
                     .progress_chars("=> "),
             );
-            self.bar.set_message(phase.to_string());
-            self.bar.set_length(total_bytes);
-            self.bar.set_position(0);
-            self.bar.reset_eta();
+            bar.set_message(phase.to_string());
+            *self.bar.borrow_mut() = bar;
         }
     }
 
     fn advance(&self, bytes: u64) {
-        self.bar.inc(bytes);
+        self.bar.borrow().inc(bytes);
     }
 
     fn finish_phase(&self) {
-        self.bar.finish_and_clear();
+        self.bar.borrow().finish_and_clear();
     }
 }
 

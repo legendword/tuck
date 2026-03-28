@@ -1,0 +1,17 @@
+[package]
+name = "tuck-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "lib"]
+name = "tuck_ffi"
+
+[dependencies]
+tuck-core = { path = "../tuck-core" }
+uniffi = { version = "0.29", features = ["cli"] }
+chrono = "0.4"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"

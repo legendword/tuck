@@ -1,0 +1,371 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1A8F13A24DC0172E69B43C23 /* DrivePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A68B280B459A88B1640A912F /* DrivePicker.swift */; };
+		40B482D6EE8E864B432F58A4 /* TuckService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD44214F3B05481251B73DAE /* TuckService.swift */; };
+		4E3DCF502EA8122A09623D70 /* tuck_ffi.swift in Sources */ = {isa = PBXBuildFile; fileRef = 093CD3DC1D373C59C3ECBDFA /* tuck_ffi.swift */; };
+		550783C2018E2FD27403FB44 /* ProgressOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD5B1B01B0D20DE48E91C6D /* ProgressOverlay.swift */; };
+		A513E87CC1EC2A9ADA28DA7A /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E892B703FAE59F43A5A0A5C /* SidebarView.swift */; };
+		B1C7E3633C5268532CB2E596 /* ProgressReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9B057162A19B2DCB0E5EE1A /* ProgressReporter.swift */; };
+		BB00FC544E1A55244884DAF2 /* DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C62E2D38533947C76801A60 /* DetailView.swift */; };
+		BD4596FBC27B6BE16D13C94D /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D79F8EAA7796785531D05D1A /* ContentView.swift */; };
+		DD5DE0E409A39E63E431A999 /* TuckAppApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7228C674F078729EB78AD99C /* TuckAppApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		093CD3DC1D373C59C3ECBDFA /* tuck_ffi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = tuck_ffi.swift; sourceTree = "<group>"; };
+		144DA7E12F292E24BF86351D /* module.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
+		48CD63C8B3D2A77DFA820B57 /* tuck_ffiFFI.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tuck_ffiFFI.h; sourceTree = "<group>"; };
+		6D6BE5E3DDDC84A6A0A0EAF3 /* TuckApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TuckApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7228C674F078729EB78AD99C /* TuckAppApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TuckAppApp.swift; sourceTree = "<group>"; };
+		7C62E2D38533947C76801A60 /* DetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailView.swift; sourceTree = "<group>"; };
+		8E892B703FAE59F43A5A0A5C /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		A68B280B459A88B1640A912F /* DrivePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrivePicker.swift; sourceTree = "<group>"; };
+		AAD5B1B01B0D20DE48E91C6D /* ProgressOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressOverlay.swift; sourceTree = "<group>"; };
+		CD44214F3B05481251B73DAE /* TuckService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TuckService.swift; sourceTree = "<group>"; };
+		D79F8EAA7796785531D05D1A /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		F9B057162A19B2DCB0E5EE1A /* ProgressReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressReporter.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		63D75C7357CCD91943A25FEC = {
+			isa = PBXGroup;
+			children = (
+				B49D13D3FDCEA4F6C00EC7B8 /* Generated */,
+				A491653E542F34B71007B2EB /* TuckApp */,
+				A1AB8D8BB5D46A8CCA7D063E /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		9F3712BA135156B261120031 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				F9B057162A19B2DCB0E5EE1A /* ProgressReporter.swift */,
+				CD44214F3B05481251B73DAE /* TuckService.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A1AB8D8BB5D46A8CCA7D063E /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				6D6BE5E3DDDC84A6A0A0EAF3 /* TuckApp.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A491653E542F34B71007B2EB /* TuckApp */ = {
+			isa = PBXGroup;
+			children = (
+				D79F8EAA7796785531D05D1A /* ContentView.swift */,
+				7228C674F078729EB78AD99C /* TuckAppApp.swift */,
+				9F3712BA135156B261120031 /* Models */,
+				B2489678F678FA1AE1CB3AD7 /* Views */,
+			);
+			path = TuckApp;
+			sourceTree = "<group>";
+		};
+		B2489678F678FA1AE1CB3AD7 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				7C62E2D38533947C76801A60 /* DetailView.swift */,
+				A68B280B459A88B1640A912F /* DrivePicker.swift */,
+				AAD5B1B01B0D20DE48E91C6D /* ProgressOverlay.swift */,
+				8E892B703FAE59F43A5A0A5C /* SidebarView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		B49D13D3FDCEA4F6C00EC7B8 /* Generated */ = {
+			isa = PBXGroup;
+			children = (
+				144DA7E12F292E24BF86351D /* module.modulemap */,
+				093CD3DC1D373C59C3ECBDFA /* tuck_ffi.swift */,
+				48CD63C8B3D2A77DFA820B57 /* tuck_ffiFFI.h */,
+			);
+			path = Generated;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		3D67395CD4E535AFE7675387 /* TuckApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 06E945F28210BD37F779967E /* Build configuration list for PBXNativeTarget "TuckApp" */;
+			buildPhases = (
+				729DA0A44D716794D60FC7D8 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TuckApp;
+			packageProductDependencies = (
+			);
+			productName = TuckApp;
+			productReference = 6D6BE5E3DDDC84A6A0A0EAF3 /* TuckApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		2B823F7DFB3D33151E2F8F09 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					3D67395CD4E535AFE7675387 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = B065FCD69FE8433E6CCE1971 /* Build configuration list for PBXProject "TuckApp" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 63D75C7357CCD91943A25FEC;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A1AB8D8BB5D46A8CCA7D063E /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				3D67395CD4E535AFE7675387 /* TuckApp */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		729DA0A44D716794D60FC7D8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BD4596FBC27B6BE16D13C94D /* ContentView.swift in Sources */,
+				BB00FC544E1A55244884DAF2 /* DetailView.swift in Sources */,
+				1A8F13A24DC0172E69B43C23 /* DrivePicker.swift in Sources */,
+				550783C2018E2FD27403FB44 /* ProgressOverlay.swift in Sources */,
+				B1C7E3633C5268532CB2E596 /* ProgressReporter.swift in Sources */,
+				A513E87CC1EC2A9ADA28DA7A /* SidebarView.swift in Sources */,
+				DD5DE0E409A39E63E431A999 /* TuckAppApp.swift in Sources */,
+				40B482D6EE8E864B432F58A4 /* TuckService.swift in Sources */,
+				4E3DCF502EA8122A09623D70 /* tuck_ffi.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		13CB35A345F54778E910BB42 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Generated";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/../target/universal";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.0;
+				OTHER_LDFLAGS = (
+					"-ltuck_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.legendword.TuckApp;
+				PRODUCT_NAME = Tuck;
+				SDKROOT = macosx;
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/Generated";
+				SWIFT_VERSION = 5.10;
+			};
+			name = Debug;
+		};
+		1C93D8F411F98C562A6A133F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		5033F60DF9B01B0E8B3C8EB2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Generated";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/../target/universal";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0.0;
+				OTHER_LDFLAGS = (
+					"-ltuck_ffi",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.legendword.TuckApp;
+				PRODUCT_NAME = Tuck;
+				SDKROOT = macosx;
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/Generated";
+				SWIFT_VERSION = 5.10;
+			};
+			name = Release;
+		};
+		91BDB8AB3FCA3B490EAABCB9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		06E945F28210BD37F779967E /* Build configuration list for PBXNativeTarget "TuckApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				13CB35A345F54778E910BB42 /* Debug */,
+				5033F60DF9B01B0E8B3C8EB2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B065FCD69FE8433E6CCE1971 /* Build configuration list for PBXProject "TuckApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1C93D8F411F98C562A6A133F /* Debug */,
+				91BDB8AB3FCA3B490EAABCB9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 2B823F7DFB3D33151E2F8F09 /* Project object */;
+}

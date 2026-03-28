@@ -51,6 +51,12 @@ pub fn hash_directory(
         if !ft.is_file() {
             continue;
         }
+        // Skip macOS metadata files (AppleDouble resource forks and .DS_Store)
+        if let Some(name) = entry.file_name().to_str() {
+            if name.starts_with("._") || name == ".DS_Store" {
+                continue;
+            }
+        }
         let rel = entry
             .path()
             .strip_prefix(dir)
