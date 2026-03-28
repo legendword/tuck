@@ -6,6 +6,12 @@ Unlike backup tools (which use retention policies that purge old snapshots) or s
 
 ## Install
 
+### macOS app
+
+Download `Tuck.dmg` from the [latest release](https://github.com/legendword/tuck/releases/latest) and drag Tuck to Applications.
+
+### CLI
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/legendword/tuck/main/install.sh | sh
 ```
@@ -153,10 +159,11 @@ cargo test
 tuck/
   Cargo.toml              # Workspace root
   install.sh              # One-line install script
+  build-ffi.sh            # Build universal FFI lib + Swift bindings
   .github/workflows/
-    release.yml            # CI: build universal binary, publish GitHub Release
+    release.yml            # CI: build CLI + macOS app, publish GitHub Release
   crates/
-    tuck-core/             # Library — all logic, no CLI concerns
+    tuck-core/             # Library — all logic, no CLI/UI concerns
       src/
         lib.rs
         error.rs           # TuckError, TuckResult, IoContext
@@ -181,9 +188,37 @@ tuck/
           status.rs
           update.rs
           verify.rs
+    tuck-ffi/              # Static library — UniFFI bridge to Swift
+      src/
+        lib.rs
+        types.rs           # Mirror types with uniffi::Record
+        error.rs           # FfiTuckError with uniffi::Error
+        progress.rs        # Callback interface for progress reporting
+        functions.rs       # Exported FFI functions
+  TuckApp/                 # SwiftUI macOS app
+    project.yml            # xcodegen project spec
+    TuckApp/               # Swift sources
+    Generated/             # Auto-generated Swift bindings (from build-ffi.sh)
 ```
 
-The workspace is split into `tuck-core` (library) and `tuck-cli` (binary) so the core logic can be reused by a future Swift GUI via FFI.
+The workspace is split into three crates:
+- `tuck-core` (library) — all business logic
+- `tuck-cli` (binary) — CLI interface
+- `tuck-ffi` (staticlib) — UniFFI wrapper exposing `tuck-core` to Swift
+
+The macOS app lives in `TuckApp/` and uses SwiftUI with the FFI bindings.
+
+### Building the macOS app
+
+Requires [Rust](https://rustup.rs/) and [xcodegen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
+
+```bash
+./build-ffi.sh                        # build universal static lib + generate Swift bindings
+cd TuckApp && xcodegen generate       # generate .xcodeproj from project.yml
+xcodebuild build -project TuckApp.xcodeproj -scheme TuckApp
+```
+
+**Important:** After changing any Rust code (in `tuck-core` or `tuck-ffi`), you must re-run `./build-ffi.sh` before rebuilding the app. The script builds the FFI library for both `aarch64` and `x86_64`, creates a universal binary via `lipo`, and generates the Swift bindings at `TuckApp/Generated/`.
 
 ## License
 

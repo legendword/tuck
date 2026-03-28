@@ -32,8 +32,34 @@ jobs:
             target/aarch64-apple-darwin/release/tuck \
             target/x86_64-apple-darwin/release/tuck
 
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Build FFI library
+        run: ./build-ffi.sh
+
+      - name: Build macOS app
+        run: |
+          cd TuckApp
+          xcodegen generate
+          xcodebuild build -project TuckApp.xcodeproj -scheme TuckApp \
+            -configuration Release -derivedDataPath build
+          APP_PATH="build/Build/Products/Release/Tuck.app"
+          test -d "$APP_PATH" || { echo "App not found at $APP_PATH"; exit 1; }
+
+      - name: Create DMG
+        run: |
+          APP_PATH="TuckApp/build/Build/Products/Release/Tuck.app"
+          DMG_DIR=$(mktemp -d)
+          cp -R "$APP_PATH" "$DMG_DIR/"
+          ln -s /Applications "$DMG_DIR/Applications"
+          hdiutil create -volname "Tuck" -srcfolder "$DMG_DIR" \
+            -ov -format UDZO Tuck.dmg
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: tuck-macos-universal
+          files: |
+            tuck-macos-universal
+            Tuck.dmg
