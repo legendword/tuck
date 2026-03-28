@@ -325,7 +325,7 @@ RustBuffer uniffi_tuck_ffi_fn_func_load_pending(RustBuffer drive_root, RustCallS
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_TUCK_FFI_FN_FUNC_PLAN_ADD
 #define UNIFFI_FFIDEF_UNIFFI_TUCK_FFI_FN_FUNC_PLAN_ADD
-RustBuffer uniffi_tuck_ffi_fn_func_plan_add(RustBuffer path, RustBuffer drive, RustCallStatus *_Nonnull out_status
+RustBuffer uniffi_tuck_ffi_fn_func_plan_add(RustBuffer path, RustBuffer drive, int8_t force, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_TUCK_FFI_FN_FUNC_PLAN_RESTORE

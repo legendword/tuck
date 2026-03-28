@@ -98,12 +98,12 @@ pub fn auto_detect_drive() -> TuckResult<DriveInfo> {
 }
 
 /// Resolve a drive from an optional name and prefix.
-/// If name is provided, find it; otherwise auto-detect.
+/// If name is provided, find it; otherwise return an error asking the user to specify.
 /// If prefix is provided, root_path is set to mount_path/prefix.
 pub fn resolve_drive(name: Option<&str>, prefix: Option<&str>) -> TuckResult<DriveInfo> {
     let drive = match name {
         Some(n) => find_drive(n),
-        None => auto_detect_drive(),
+        None => Err(TuckError::NoDriveSpecified),
     }?;
     Ok(drive.with_prefix(prefix))
 }

@@ -1119,6 +1119,7 @@ public enum FfiTuckError: Swift.Error {
     )
     case DriveNotConnected(name: String
     )
+    case NoDriveSpecified
     case NoDriveFound
     case MultipleDrivesFound(names: [String]
     )
@@ -1160,34 +1161,35 @@ public struct FfiConverterTypeFfiTuckError: FfiConverterRustBuffer {
         case 2: return .DriveNotConnected(
             name: try FfiConverterString.read(from: &buf)
             )
-        case 3: return .NoDriveFound
-        case 4: return .MultipleDrivesFound(
+        case 3: return .NoDriveSpecified
+        case 4: return .NoDriveFound
+        case 5: return .MultipleDrivesFound(
             names: try FfiConverterSequenceString.read(from: &buf)
             )
-        case 5: return .PathNotFound(
+        case 6: return .PathNotFound(
             path: try FfiConverterString.read(from: &buf)
             )
-        case 6: return .NotArchived(
+        case 7: return .NotArchived(
             path: try FfiConverterString.read(from: &buf)
             )
-        case 7: return .AlreadyExists(
+        case 8: return .AlreadyExists(
             path: try FfiConverterString.read(from: &buf)
             )
-        case 8: return .InsufficientSpace(
+        case 9: return .InsufficientSpace(
             path: try FfiConverterString.read(from: &buf), 
             needed: try FfiConverterString.read(from: &buf), 
             available: try FfiConverterString.read(from: &buf)
             )
-        case 9: return .ChecksumMismatch(
+        case 10: return .ChecksumMismatch(
             path: try FfiConverterString.read(from: &buf), 
             expected: try FfiConverterString.read(from: &buf), 
             actual: try FfiConverterString.read(from: &buf)
             )
-        case 10: return .Manifest(
+        case 11: return .Manifest(
             message: try FfiConverterString.read(from: &buf)
             )
-        case 11: return .Cancelled
-        case 12: return .Other(
+        case 12: return .Cancelled
+        case 13: return .Other(
             message: try FfiConverterString.read(from: &buf)
             )
 
@@ -1213,55 +1215,59 @@ public struct FfiConverterTypeFfiTuckError: FfiConverterRustBuffer {
             FfiConverterString.write(name, into: &buf)
             
         
-        case .NoDriveFound:
+        case .NoDriveSpecified:
             writeInt(&buf, Int32(3))
         
         
-        case let .MultipleDrivesFound(names):
+        case .NoDriveFound:
             writeInt(&buf, Int32(4))
+        
+        
+        case let .MultipleDrivesFound(names):
+            writeInt(&buf, Int32(5))
             FfiConverterSequenceString.write(names, into: &buf)
             
         
         case let .PathNotFound(path):
-            writeInt(&buf, Int32(5))
-            FfiConverterString.write(path, into: &buf)
-            
-        
-        case let .NotArchived(path):
             writeInt(&buf, Int32(6))
             FfiConverterString.write(path, into: &buf)
             
         
-        case let .AlreadyExists(path):
+        case let .NotArchived(path):
             writeInt(&buf, Int32(7))
             FfiConverterString.write(path, into: &buf)
             
         
-        case let .InsufficientSpace(path,needed,available):
+        case let .AlreadyExists(path):
             writeInt(&buf, Int32(8))
+            FfiConverterString.write(path, into: &buf)
+            
+        
+        case let .InsufficientSpace(path,needed,available):
+            writeInt(&buf, Int32(9))
             FfiConverterString.write(path, into: &buf)
             FfiConverterString.write(needed, into: &buf)
             FfiConverterString.write(available, into: &buf)
             
         
         case let .ChecksumMismatch(path,expected,actual):
-            writeInt(&buf, Int32(9))
+            writeInt(&buf, Int32(10))
             FfiConverterString.write(path, into: &buf)
             FfiConverterString.write(expected, into: &buf)
             FfiConverterString.write(actual, into: &buf)
             
         
         case let .Manifest(message):
-            writeInt(&buf, Int32(10))
+            writeInt(&buf, Int32(11))
             FfiConverterString.write(message, into: &buf)
             
         
         case .Cancelled:
-            writeInt(&buf, Int32(11))
+            writeInt(&buf, Int32(12))
         
         
         case let .Other(message):
-            writeInt(&buf, Int32(12))
+            writeInt(&buf, Int32(13))
             FfiConverterString.write(message, into: &buf)
             
         }
@@ -1685,11 +1691,12 @@ public func loadPending(driveRoot: String)throws  -> FfiPendingOperation?  {
     )
 })
 }
-public func planAdd(path: String, drive: FfiDriveInfo)throws  -> FfiAddPlan  {
+public func planAdd(path: String, drive: FfiDriveInfo, force: Bool)throws  -> FfiAddPlan  {
     return try  FfiConverterTypeFfiAddPlan_lift(try rustCallWithError(FfiConverterTypeFfiTuckError_lift) {
     uniffi_tuck_ffi_fn_func_plan_add(
         FfiConverterString.lower(path),
-        FfiConverterTypeFfiDriveInfo_lower(drive),$0
+        FfiConverterTypeFfiDriveInfo_lower(drive),
+        FfiConverterBool.lower(force),$0
     )
 })
 }
@@ -1746,7 +1753,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tuck_ffi_checksum_func_load_pending() != 9541) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tuck_ffi_checksum_func_plan_add() != 28908) {
+    if (uniffi_tuck_ffi_checksum_func_plan_add() != 10277) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tuck_ffi_checksum_func_plan_restore() != 56466) {

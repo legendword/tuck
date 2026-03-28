@@ -9,6 +9,7 @@ pub enum FfiTuckError {
     DriveNotConnected {
         name: String,
     },
+    NoDriveSpecified,
     NoDriveFound,
     MultipleDrivesFound {
         names: Vec<String>,
@@ -49,6 +50,7 @@ impl From<TuckError> for FfiTuckError {
                 path: path.to_string_lossy().into_owned(),
             },
             TuckError::DriveNotConnected(name) => FfiTuckError::DriveNotConnected { name },
+            TuckError::NoDriveSpecified => FfiTuckError::NoDriveSpecified,
             TuckError::NoDriveFound => FfiTuckError::NoDriveFound,
             TuckError::MultipleDrivesFound(names) => {
                 FfiTuckError::MultipleDrivesFound { names }
@@ -94,6 +96,7 @@ impl std::fmt::Display for FfiTuckError {
             FfiTuckError::DriveNotConnected { name } => {
                 write!(f, "Drive not connected: {name}")
             }
+            FfiTuckError::NoDriveSpecified => write!(f, "No drive specified"),
             FfiTuckError::NoDriveFound => write!(f, "No external drive found"),
             FfiTuckError::MultipleDrivesFound { names } => {
                 write!(f, "Multiple drives found: {names:?}")

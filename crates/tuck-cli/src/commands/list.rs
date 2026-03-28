@@ -1,16 +1,12 @@
 use colored::Colorize;
 use humansize::{format_size, BINARY};
 use tuck_core::config::Config;
-use tuck_core::drive;
 use tuck_core::error::TuckError;
 use tuck_core::manifest::Manifest;
 
 pub fn run(drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckError> {
     let config = Config::load()?;
-    let drive = drive::resolve_drive(
-        config.resolve_drive_name(drive_name),
-        config.resolve_prefix(prefix),
-    )?;
+    let drive = super::resolve_drive_interactive(&config, drive_name, prefix)?;
     super::check_pending(&drive.root_path)?;
     let manifest = Manifest::load(&drive.root_path)?;
 

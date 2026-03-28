@@ -7,9 +7,11 @@ pub mod update;
 pub mod verify;
 
 use colored::Colorize;
-use dialoguer::Confirm;
+use dialoguer::{Confirm, Select};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::cell::RefCell;
+use tuck_core::config::Config;
+use tuck_core::drive::{self, DriveInfo};
 use tuck_core::error::TuckError;
 use tuck_core::pending::{PendingKind, PendingOperation};
 use tuck_core::progress::Progress;
@@ -59,6 +61,37 @@ impl Progress for CliProgress {
 
     fn finish_phase(&self) {
         self.bar.borrow().finish_and_clear();
+    }
+}
+
+/// Resolve a drive, prompting the user to select one interactively if not specified.
+pub fn resolve_drive_interactive(config: &Config, drive_name: Option<&str>, prefix: Option<&str>) -> Result<DriveInfo, TuckError> {
+    let effective_name = config.resolve_drive_name(drive_name);
+    let effective_prefix = config.resolve_prefix(prefix);
+
+    match drive::resolve_drive(effective_name, effective_prefix) {
+        Ok(drive) => Ok(drive),
+        Err(TuckError::NoDriveSpecified) => {
+            let drives = drive::list_drives()?;
+            match drives.len() {
+                0 => Err(TuckError::NoDriveFound),
+                1 => {
+                    let drive = drives.into_iter().next().unwrap();
+                    Ok(drive.with_prefix(effective_prefix))
+                }
+                _ => {
+                    let names: Vec<&str> = drives.iter().map(|d| d.name.as_str()).collect();
+                    let selection = Select::new()
+                        .with_prompt("Select a drive")
+                        .items(&names)
+                        .interact()
+                        .map_err(|e| TuckError::Other(e.to_string()))?;
+                    let drive = drives.into_iter().nth(selection).unwrap();
+                    Ok(drive.with_prefix(effective_prefix))
+                }
+            }
+        }
+        Err(e) => Err(e),
     }
 }
 

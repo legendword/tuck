@@ -13,6 +13,9 @@ pub enum TuckError {
     #[error("Drive not connected: {0}")]
     DriveNotConnected(String),
 
+    #[error("No drive specified. Use --drive <name> or set a default with `tuck config set-drive <name>`")]
+    NoDriveSpecified,
+
     #[error("No external drive found")]
     NoDriveFound,
 
@@ -57,6 +60,7 @@ impl TuckError {
         match self {
             TuckError::Io { .. } => 1,
             TuckError::DriveNotConnected(_) => 2,
+            TuckError::NoDriveSpecified => 2,
             TuckError::NoDriveFound => 2,
             TuckError::MultipleDrivesFound(_) => 2,
             TuckError::PathNotFound(_) => 1,

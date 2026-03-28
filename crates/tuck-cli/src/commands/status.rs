@@ -9,12 +9,12 @@ use tuck_core::verify;
 
 pub fn run(path: &str, drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckError> {
     let config = Config::load()?;
-    let effective_drive = config.resolve_drive_name(drive_name);
-    let effective_prefix = config.resolve_prefix(prefix);
     let target = Path::new(path);
 
-    // If drive or prefix is specified (via flag or config), resolve to that specific drive.
-    // Otherwise scan all drives at their root.
+    // If drive or prefix is specified (via flag or config), check that specific drive.
+    // Otherwise scan all connected drives.
+    let effective_drive = config.resolve_drive_name(drive_name);
+    let effective_prefix = config.resolve_prefix(prefix);
     let drives = if effective_drive.is_some() || effective_prefix.is_some() {
         vec![drive::resolve_drive(effective_drive, effective_prefix)?]
     } else {
