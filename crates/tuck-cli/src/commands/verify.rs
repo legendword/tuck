@@ -13,7 +13,7 @@ pub fn run(drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckErr
 
     println!(
         "Verifying all archives on drive '{}'...\n",
-        drive.name
+        super::safe(&drive.name)
     );
 
     let progress = CliProgress::new();
@@ -31,7 +31,7 @@ pub fn run(drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckErr
             println!(
                 "  {} {} ({}/{} files passed)",
                 "PASS".green().bold(),
-                result.original_path.display(),
+                super::safe(result.original_path.display()),
                 result.passed,
                 result.total_files
             );
@@ -40,20 +40,20 @@ pub fn run(drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckErr
             println!(
                 "  {} {} ({} failures)",
                 "FAIL".red().bold(),
-                result.original_path.display(),
+                super::safe(result.original_path.display()),
                 result.failed.len()
             );
             for f in &result.failed {
                 let file_desc = if f.relative_path.is_empty() {
                     "(root file)".to_string()
                 } else {
-                    f.relative_path.clone()
+                    super::safe(&f.relative_path)
                 };
                 println!(
                     "       {} expected {}, got {}",
                     file_desc,
-                    f.expected.dimmed(),
-                    f.actual.red()
+                    super::safe(&f.expected).dimmed(),
+                    super::safe(&f.actual).red()
                 );
             }
         }

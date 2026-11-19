@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::error::{IoContext, TuckError, TuckResult};
+use crate::safety;
 
 const VOLUMES_DIR: &str = "/Volumes";
 
@@ -17,13 +18,31 @@ pub struct DriveInfo {
 
 impl DriveInfo {
     /// Return a new DriveInfo with the given prefix applied to root_path.
-    pub fn with_prefix(mut self, prefix: Option<&str>) -> Self {
+    ///
+    /// The prefix must be a plain relative folder path (see
+    /// [`validate_prefix`]), and no existing folder along it may be a symlink,
+    /// so the tuck root can never end up outside the drive.
+    pub fn with_prefix(mut self, prefix: Option<&str>) -> TuckResult<Self> {
         if let Some(p) = prefix {
             if !p.is_empty() {
-                self.root_path = self.mount_path.join(p);
+                validate_prefix(p)?;
+                let root = self.mount_path.join(p);
+                safety::ensure_contained(&self.mount_path, &root)?;
+                self.root_path = root;
             }
         }
-        self
+        Ok(self)
+    }
+}
+
+/// Check that a prefix is a relative folder path made of plain names.
+/// Absolute paths and `..` are rejected: they would move the tuck root off
+/// the drive (`--prefix /` would make it the local filesystem root).
+pub fn validate_prefix(prefix: &str) -> TuckResult<()> {
+    if safety::is_plain_relative(Path::new(prefix)) {
+        Ok(())
+    } else {
+        Err(TuckError::InvalidPrefix(prefix.to_string()))
     }
 }
 
@@ -105,7 +124,7 @@ pub fn resolve_drive(name: Option<&str>, prefix: Option<&str>) -> TuckResult<Dri
         Some(n) => find_drive(n),
         None => Err(TuckError::NoDriveSpecified),
     }?;
-    Ok(drive.with_prefix(prefix))
+    drive.with_prefix(prefix)
 }
 
 /// Query available disk space (in bytes) for the filesystem containing `path`.
@@ -152,6 +171,24 @@ pub fn archive_path_on_drive(drive_mount: &Path, original_path: &Path) -> PathBu
     drive_mount.join(stripped)
 }
 
+/// Compute the archive path for `original_path` and verify it is safe to use.
+///
+/// `original_path` may come from the manifest or pending marker on the drive,
+/// so it is checked rather than trusted: it must be an absolute path without
+/// `..`, and the resulting archive path must stay strictly inside
+/// `drive_root` without passing through a symlink.
+pub fn safe_archive_path(drive_root: &Path, original_path: &Path) -> TuckResult<PathBuf> {
+    if !safety::is_plain_absolute(original_path) {
+        return Err(TuckError::UnsafePath {
+            path: original_path.to_path_buf(),
+            reason: "it is not an absolute path free of '..' components".to_string(),
+        });
+    }
+    let archive_path = archive_path_on_drive(drive_root, original_path);
+    safety::ensure_contained(drive_root, &archive_path)?;
+    Ok(archive_path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,7 +224,7 @@ mod tests {
             mount_path: PathBuf::from("/Volumes/MyDrive"),
             root_path: PathBuf::from("/Volumes/MyDrive"),
         };
-        let prefixed = drive.with_prefix(Some("tuck-macbook"));
+        let prefixed = drive.with_prefix(Some("tuck-macbook")).unwrap();
         assert_eq!(prefixed.mount_path, PathBuf::from("/Volumes/MyDrive"));
         assert_eq!(prefixed.root_path, PathBuf::from("/Volumes/MyDrive/tuck-macbook"));
     }
@@ -225,7 +262,62 @@ mod tests {
             mount_path: PathBuf::from("/Volumes/MyDrive"),
             root_path: PathBuf::from("/Volumes/MyDrive"),
         };
-        let same = drive.with_prefix(None);
+        let same = drive.with_prefix(None).unwrap();
         assert_eq!(same.root_path, PathBuf::from("/Volumes/MyDrive"));
+    }
+
+    fn drive_at(path: &Path) -> DriveInfo {
+        DriveInfo {
+            name: "MyDrive".to_string(),
+            mount_path: path.to_path_buf(),
+            root_path: path.to_path_buf(),
+        }
+    }
+
+    #[test]
+    fn test_with_prefix_rejects_escaping_prefixes() {
+        let drive = drive_at(Path::new("/Volumes/MyDrive"));
+        for bad in ["/", "/Users/me", "..", "../other", "a/../../b", "./a"] {
+            let err = drive.clone().with_prefix(Some(bad)).unwrap_err();
+            assert!(matches!(err, TuckError::InvalidPrefix(_)), "{bad}");
+        }
+        // Nested plain prefixes are still fine.
+        let nested = drive.with_prefix(Some("backups/macbook")).unwrap();
+        assert_eq!(
+            nested.root_path,
+            PathBuf::from("/Volumes/MyDrive/backups/macbook")
+        );
+    }
+
+    #[test]
+    fn test_with_prefix_rejects_symlinked_prefix_folder() {
+        let mount = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(elsewhere.path(), mount.path().join("tuck")).unwrap();
+
+        let err = drive_at(mount.path()).with_prefix(Some("tuck")).unwrap_err();
+        assert!(matches!(err, TuckError::UnsafePath { .. }));
+    }
+
+    #[test]
+    fn test_safe_archive_path() {
+        let root = tempfile::tempdir().unwrap();
+        let ok = safe_archive_path(root.path(), Path::new("/Users/foo/file.txt")).unwrap();
+        assert_eq!(ok, root.path().join("Users/foo/file.txt"));
+
+        for bad in ["/", "relative/path", "/Users/../../etc/passwd", "/../x"] {
+            let err = safe_archive_path(root.path(), Path::new(bad)).unwrap_err();
+            assert!(matches!(err, TuckError::UnsafePath { .. }), "{bad}");
+        }
+    }
+
+    #[test]
+    fn test_safe_archive_path_rejects_symlink_on_drive() {
+        let root = tempfile::tempdir().unwrap();
+        // The classic attack: <drive>/Users -> /Users makes the archive path
+        // resolve back onto the local disk.
+        std::os::unix::fs::symlink("/", root.path().join("Users")).unwrap();
+        let err = safe_archive_path(root.path(), Path::new("/Users/foo/file.txt")).unwrap_err();
+        assert!(matches!(err, TuckError::UnsafePath { .. }));
     }
 }

@@ -1,5 +1,6 @@
 use colored::Colorize;
 use tuck_core::config::Config;
+use tuck_core::drive;
 use tuck_core::error::TuckError;
 
 use crate::ConfigAction;
@@ -31,6 +32,7 @@ pub fn run(action: ConfigAction) -> Result<(), TuckError> {
                 config.default_prefix = None;
                 println!("Cleared default prefix.");
             } else {
+                drive::validate_prefix(&value)?;
                 config.default_prefix = Some(value.clone());
                 println!("Set default prefix to '{}'.", value);
             }

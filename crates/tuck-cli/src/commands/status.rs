@@ -15,10 +15,11 @@ pub fn run(path: &str, drive_name: Option<&str>, prefix: Option<&str>) -> Result
     // Otherwise scan all connected drives.
     let effective_drive = config.resolve_drive_name(drive_name);
     let effective_prefix = config.resolve_prefix(prefix);
-    let drives = if effective_drive.is_some() || effective_prefix.is_some() {
-        vec![drive::resolve_drive(effective_drive, effective_prefix)?]
-    } else {
+    let scanning_all = effective_drive.is_none() && effective_prefix.is_none();
+    let drives = if scanning_all {
         drive::list_drives()?
+    } else {
+        vec![drive::resolve_drive(effective_drive, effective_prefix)?]
     };
 
     if drives.is_empty() {
@@ -29,7 +30,21 @@ pub fn run(path: &str, drive_name: Option<&str>, prefix: Option<&str>) -> Result
     let mut found = false;
 
     for d in &drives {
-        super::check_pending(&d.root_path)?;
+        if let Err(e) = super::check_pending(&d.root_path) {
+            if !scanning_all {
+                return Err(e);
+            }
+            // Any mounted volume can carry a marker (and a read-only one cannot
+            // even be cleaned up). When every volume is being scanned, that
+            // must not stop the others from being checked.
+            eprintln!(
+                "{} skipping drive '{}': {}",
+                "Warning:".yellow().bold(),
+                super::safe(&d.name),
+                super::safe(&e)
+            );
+            continue;
+        }
         if let Some(entry) = verify::check_status(target, d)? {
             found = true;
             let kind = if entry.is_directory {
@@ -43,8 +58,8 @@ pub fn run(path: &str, drive_name: Option<&str>, prefix: Option<&str>) -> Result
             println!(
                 "{} {} is archived on drive '{}'",
                 "Found:".green().bold(),
-                entry.original_path.display(),
-                entry.drive_name
+                super::safe(entry.original_path.display()),
+                super::safe(&entry.drive_name)
             );
             println!("  Type:     {}", kind);
             println!("  Size:     {}", size);

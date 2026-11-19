@@ -146,7 +146,8 @@ fn main() {
     };
 
     if let Err(e) = result {
-        eprintln!("{}", e);
+        // Errors can quote paths and names read from the drive.
+        eprintln!("{}", commands::safe(&e));
         process::exit(e.exit_code());
     }
 }

@@ -11,7 +11,7 @@ pub fn run(drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckErr
     let manifest = Manifest::load(&drive.root_path)?;
 
     if manifest.entries.is_empty() {
-        println!("No archived entries on drive '{}'.", drive.name);
+        println!("No archived entries on drive '{}'.", super::safe(&drive.name));
         return Ok(());
     }
 
@@ -19,7 +19,7 @@ pub fn run(drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckErr
         "{} ({} entries on '{}'):\n",
         "Archived files".bold(),
         manifest.entries.len(),
-        drive.name
+        super::safe(&drive.name)
     );
 
     for entry in &manifest.entries {
@@ -31,7 +31,7 @@ pub fn run(drive_name: Option<&str>, prefix: Option<&str>) -> Result<(), TuckErr
         println!(
             "  [{}] {} ({}, {} file(s), archived {})",
             kind.dimmed(),
-            entry.original_path.display().to_string().bold(),
+            super::safe(entry.original_path.display()).bold(),
             size,
             files,
             date

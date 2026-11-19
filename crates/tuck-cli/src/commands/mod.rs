@@ -13,8 +13,12 @@ use std::cell::RefCell;
 use tuck_core::config::Config;
 use tuck_core::drive::{self, DriveInfo};
 use tuck_core::error::TuckError;
-use tuck_core::pending::{PendingKind, PendingOperation};
+use tuck_core::pending::{CleanupPlan, PendingKind, PendingOperation};
 use tuck_core::progress::Progress;
+
+/// Make text that comes from the drive (manifest entries, marker contents,
+/// volume names) safe to print. See [`tuck_core::safety::printable`].
+pub use tuck_core::safety::printable as safe;
 
 /// Progress bar wrapper that implements tuck_core::progress::Progress.
 pub struct CliProgress {
@@ -77,17 +81,17 @@ pub fn resolve_drive_interactive(config: &Config, drive_name: Option<&str>, pref
                 0 => Err(TuckError::NoDriveFound),
                 1 => {
                     let drive = drives.into_iter().next().unwrap();
-                    Ok(drive.with_prefix(effective_prefix))
+                    drive.with_prefix(effective_prefix)
                 }
                 _ => {
-                    let names: Vec<&str> = drives.iter().map(|d| d.name.as_str()).collect();
+                    let names: Vec<String> = drives.iter().map(|d| safe(&d.name)).collect();
                     let selection = Select::new()
                         .with_prompt("Select a drive")
                         .items(&names)
                         .interact()
                         .map_err(|e| TuckError::Other(e.to_string()))?;
                     let drive = drives.into_iter().nth(selection).unwrap();
-                    Ok(drive.with_prefix(effective_prefix))
+                    drive.with_prefix(effective_prefix)
                 }
             }
         }
@@ -96,50 +100,67 @@ pub fn resolve_drive_interactive(config: &Config, drive_name: Option<&str>, pref
 }
 
 /// Check for a pending (interrupted) operation on the drive root.
-/// If found, prompt the user to clean up before continuing.
+/// If found, show exactly what cleaning it up would delete and ask first.
 /// Returns Ok(()) if no pending op or if cleanup succeeded.
+///
+/// The marker is read from the drive, so it is never acted on as written:
+/// `PendingOperation::inspect` decides what, if anything, may be deleted.
 pub fn check_pending(drive_root: &std::path::Path) -> Result<(), TuckError> {
-    let pending = PendingOperation::load(drive_root)?;
-    let op = match pending {
-        Some(op) => op,
+    let status = match PendingOperation::inspect(drive_root)? {
+        Some(status) => status,
         None => return Ok(()),
     };
 
-    let action = match op.kind {
-        PendingKind::Add => "archive",
-        PendingKind::Restore => "restore",
-    };
-
-    println!(
-        "\n{} A previous {} operation was interrupted:",
-        "Warning:".yellow().bold(),
-        action
-    );
-    println!("  Source: {}", op.original_path.display());
-    println!("  Target: {}", op.archive_path.display());
-    println!("  Started: {}\n", op.started_at.format("%Y-%m-%d %H:%M:%S"));
-
-    match op.kind {
-        PendingKind::Add => {
+    match &status.op {
+        Some(op) => {
+            let action = match op.kind {
+                PendingKind::Add => "archive",
+                PendingKind::Restore => "restore",
+            };
             println!(
-                "  This will {} the partial copy on the drive.",
-                "remove".red()
+                "\n{} A previous {} operation was interrupted:",
+                "Warning:".yellow().bold(),
+                action
             );
-            println!("  The local file was not deleted and is still intact.");
+            println!("  Local path: {}", safe(op.original_path.display()));
+            println!("  Started:    {}\n", op.started_at.format("%Y-%m-%d %H:%M:%S"));
         }
-        PendingKind::Restore => {
-            println!(
-                "  This will {} the partial local copy.",
-                "remove".red()
-            );
-            println!("  The archive on the drive is still intact.");
-        }
+        None => println!(
+            "\n{} The drive has a marker for an interrupted operation that tuck cannot read.\n",
+            "Warning:".yellow().bold()
+        ),
     }
+
+    let prompt = match &status.plan {
+        CleanupPlan::Remove(target) => {
+            println!(
+                "  Cleaning up will {} this path and everything in it:",
+                "permanently delete".red()
+            );
+            println!("    {}", safe(target.display()));
+            match status.op.as_ref().map(|op| op.kind) {
+                Some(PendingKind::Restore) => {
+                    println!("  It is the partial local copy from a restore started on this Mac.");
+                    println!("  The archive on the drive is still intact.");
+                }
+                _ => {
+                    println!("  It is the partial copy on the drive.");
+                    println!("  The local files were not deleted and are still intact.");
+                }
+            }
+            "Delete it and clear the interrupted operation?"
+        }
+        CleanupPlan::DiscardMarker { reason } => {
+            println!("  Nothing will be deleted: {}.", safe(reason));
+            println!("  Only the marker file on the drive will be removed.");
+            "Remove the marker?"
+        }
+    };
 
     println!();
     let confirmed = Confirm::new()
-        .with_prompt("Clean up the incomplete operation?")
-        .default(true)
+        .with_prompt(prompt)
+        .default(false)
         .interact()
         .map_err(|e| TuckError::Other(e.to_string()))?;
 
@@ -157,9 +178,10 @@ pub fn check_pending(drive_root: &std::path::Path) -> Result<(), TuckError> {
     );
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    PendingOperation::cleanup(drive_root, &op)?;
+    let result = status.resolve(drive_root);
 
     spinner.finish_and_clear();
+    result?;
     println!("{}\n", "Cleaned up successfully.".green());
     Ok(())
 }

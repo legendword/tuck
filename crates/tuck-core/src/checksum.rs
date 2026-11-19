@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -9,6 +10,13 @@ use crate::manifest::FileChecksum;
 use crate::progress::Progress;
 
 const CHUNK_SIZE: usize = 64 * 1024; // 64 KB
+
+/// macOS metadata files (AppleDouble resource forks and `.DS_Store`). The OS
+/// creates these on its own, so they are not hashed or recorded in the manifest.
+pub(crate) fn is_ignored_metadata_file(name: &OsStr) -> bool {
+    name.to_str()
+        .is_some_and(|name| name.starts_with("._") || name == ".DS_Store")
+}
 
 /// Compute BLAKE3 hash of a single file using streaming reads.
 pub fn hash_file(path: &Path) -> TuckResult<String> {
@@ -51,11 +59,8 @@ pub fn hash_directory(
         if !ft.is_file() {
             continue;
         }
-        // Skip macOS metadata files (AppleDouble resource forks and .DS_Store)
-        if let Some(name) = entry.file_name().to_str() {
-            if name.starts_with("._") || name == ".DS_Store" {
-                continue;
-            }
+        if is_ignored_metadata_file(entry.file_name()) {
+            continue;
         }
         let rel = entry
             .path()

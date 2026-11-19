@@ -1,10 +1,10 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{IoContext, TuckError, TuckResult};
+use crate::error::{TuckError, TuckResult};
+use crate::safety;
 
 const MANIFEST_FILENAME: &str = ".tuck-manifest.json";
 
@@ -13,6 +13,33 @@ pub struct FileChecksum {
     pub relative_path: String,
     pub hash: String,
     pub size_bytes: u64,
+}
+
+impl FileChecksum {
+    /// Location of this file under `archive_base` (the entry's archive path).
+    ///
+    /// `relative_path` comes from the manifest on the drive, so it is checked
+    /// rather than trusted: it must be empty (the entry is a single file) or
+    /// a plain relative path, and nothing along it may be a symlink. An
+    /// absolute path or `..` would otherwise point tuck at files outside the
+    /// archive.
+    pub fn path_under(&self, archive_base: &Path) -> TuckResult<PathBuf> {
+        if self.relative_path.is_empty() {
+            return Ok(archive_base.to_path_buf());
+        }
+        let rel = Path::new(&self.relative_path);
+        if !safety::is_plain_relative(rel) {
+            return Err(TuckError::UnsafePath {
+                path: rel.to_path_buf(),
+                reason: "the manifest lists it as a file inside an archive, \
+                         but it is not a plain relative path"
+                    .to_string(),
+            });
+        }
+        let path = archive_base.join(rel);
+        safety::ensure_contained(archive_base, &path)?;
+        Ok(path)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,24 +72,26 @@ impl Manifest {
     }
 
     /// Load manifest from disk. Returns a new empty manifest if file doesn't exist.
+    ///
+    /// The manifest must be a regular file; a symlink planted under its name
+    /// is refused rather than followed.
     pub fn load(drive_mount: &Path) -> TuckResult<Self> {
         let path = Self::path_on_drive(drive_mount);
-        if !path.exists() {
-            return Ok(Self::new());
+        match safety::read_metadata_file(&path, None)? {
+            Some(data) => {
+                serde_json::from_str(&data).map_err(|e| TuckError::Manifest(e.to_string()))
+            }
+            None => Ok(Self::new()),
         }
-        let data = fs::read_to_string(&path).io_context(&path)?;
-        serde_json::from_str(&data).map_err(|e| TuckError::Manifest(e.to_string()))
     }
 
-    /// Save manifest atomically (write to .tmp, then rename).
+    /// Save manifest atomically (write to .tmp, then rename), without
+    /// following a symlink at either name.
     pub fn save(&self, drive_mount: &Path) -> TuckResult<()> {
         let path = Self::path_on_drive(drive_mount);
-        let tmp_path = path.with_extension("json.tmp");
         let data =
             serde_json::to_string_pretty(self).map_err(|e| TuckError::Manifest(e.to_string()))?;
-        fs::write(&tmp_path, &data).io_context(&tmp_path)?;
-        fs::rename(&tmp_path, &path).io_context(&path)?;
-        Ok(())
+        safety::write_metadata_file(&path, data.as_bytes())
     }
 
     /// Find an entry by its original path (canonicalized).
@@ -99,6 +128,8 @@ impl Default for Manifest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::os::unix::fs::symlink;
     use tempfile::TempDir;
 
     fn sample_entry(path: &str) -> ArchiveEntry {
@@ -176,5 +207,59 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let m = Manifest::load(dir.path()).unwrap();
         assert!(m.entries.is_empty());
+    }
+
+    #[test]
+    fn test_load_refuses_symlinked_manifest() {
+        let dir = TempDir::new().unwrap();
+        let elsewhere = TempDir::new().unwrap();
+        let target = elsewhere.path().join("other.json");
+        fs::write(&target, r#"{"version":1,"entries":[]}"#).unwrap();
+        symlink(&target, Manifest::path_on_drive(dir.path())).unwrap();
+
+        let err = Manifest::load(dir.path()).unwrap_err();
+        assert!(matches!(err, TuckError::UnsafePath { .. }));
+    }
+
+    #[test]
+    fn test_save_does_not_write_through_planted_symlinks() {
+        let dir = TempDir::new().unwrap();
+        let elsewhere = TempDir::new().unwrap();
+        let victim = elsewhere.path().join(".zshrc");
+        fs::write(&victim, "export PATH=...").unwrap();
+        // Planted at the temp name used during the atomic write.
+        symlink(&victim, dir.path().join(".tuck-manifest.json.tmp")).unwrap();
+
+        let mut m = Manifest::new();
+        m.add_entry(sample_entry("/Users/test/file.txt")).unwrap();
+        m.save(dir.path()).unwrap();
+
+        assert_eq!(fs::read_to_string(&victim).unwrap(), "export PATH=...");
+        assert_eq!(Manifest::load(dir.path()).unwrap().entries.len(), 1);
+    }
+
+    #[test]
+    fn test_checksum_path_under() {
+        let base = TempDir::new().unwrap();
+        let cs = |rel: &str| FileChecksum {
+            relative_path: rel.to_string(),
+            hash: String::new(),
+            size_bytes: 0,
+        };
+
+        assert_eq!(cs("").path_under(base.path()).unwrap(), base.path());
+        assert_eq!(
+            cs("sub/b.txt").path_under(base.path()).unwrap(),
+            base.path().join("sub/b.txt")
+        );
+        for bad in ["/etc/passwd", "../outside", "sub/../../outside"] {
+            let err = cs(bad).path_under(base.path()).unwrap_err();
+            assert!(matches!(err, TuckError::UnsafePath { .. }), "{bad}");
+        }
+
+        // A symlink inside the archive is not followed either.
+        symlink("/etc", base.path().join("link")).unwrap();
+        let err = cs("link/passwd").path_under(base.path()).unwrap_err();
+        assert!(matches!(err, TuckError::UnsafePath { .. }));
     }
 }

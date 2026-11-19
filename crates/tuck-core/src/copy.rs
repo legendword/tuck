@@ -96,8 +96,12 @@ fn copy_dir_recursive(
 }
 
 /// Remove a file or directory recursively.
+///
+/// A symlink is removed itself; it is never followed, so this cannot delete
+/// the contents of whatever the link points at.
 pub fn remove_path(path: &Path) -> TuckResult<()> {
-    if path.is_dir() {
+    let meta = fs::symlink_metadata(path).io_context(path)?;
+    if meta.file_type().is_dir() {
         fs::remove_dir_all(path).io_context(path)
     } else {
         fs::remove_file(path).io_context(path)
@@ -194,6 +198,21 @@ mod tests {
         assert!(subdir.exists());
         remove_path(&subdir).unwrap();
         assert!(!subdir.exists());
+    }
+
+    #[test]
+    fn test_remove_path_does_not_follow_symlink() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("target");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("file.txt"), "data").unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        remove_path(&link).unwrap();
+
+        assert!(fs::symlink_metadata(&link).is_err());
+        assert!(target.join("file.txt").exists());
     }
 
     #[test]

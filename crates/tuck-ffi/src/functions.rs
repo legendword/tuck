@@ -80,7 +80,11 @@ pub fn execute_restore(
     };
     let bridge = progress.map(|p| ProgressBridge { inner: p });
     let progress_ref: Option<&dyn Progress> = bridge.as_ref().map(|b| b as &dyn Progress);
-    restore::execute_restore(&core_plan, keep_archive, progress_ref).map_err(Into::into)
+    // The app has no overwrite confirmation, so it never overwrites: if the
+    // original location already exists the restore fails with AlreadyExists.
+    let overwrite = false;
+    restore::execute_restore(&core_plan, keep_archive, overwrite, progress_ref)
+        .map_err(Into::into)
 }
 
 #[uniffi::export]
@@ -89,18 +93,22 @@ pub fn load_manifest_entries(drive_root: String) -> Result<Vec<FfiArchiveEntry>,
     Ok(manifest.entries.into_iter().map(Into::into).collect())
 }
 
+/// Look for an interrupted-operation marker on the drive. The result says
+/// what cleaning it up would do; an unreadable or untrusted marker is
+/// reported with a plan that deletes nothing.
 #[uniffi::export]
 pub fn load_pending(drive_root: String) -> Result<Option<FfiPendingOperation>, FfiTuckError> {
-    PendingOperation::load(Path::new(&drive_root))
+    PendingOperation::inspect(Path::new(&drive_root))
         .map(|opt| opt.map(Into::into))
         .map_err(Into::into)
 }
 
+/// Carry out the cleanup that `load_pending` described and remove the marker.
 #[uniffi::export]
 pub fn cleanup_pending(drive_root: String) -> Result<(), FfiTuckError> {
-    let op = PendingOperation::load(Path::new(&drive_root)).map_err(FfiTuckError::from)?;
-    if let Some(op) = op {
-        PendingOperation::cleanup(Path::new(&drive_root), &op).map_err(FfiTuckError::from)?;
+    let root = Path::new(&drive_root);
+    if let Some(status) = PendingOperation::inspect(root).map_err(FfiTuckError::from)? {
+        status.resolve(root).map_err(FfiTuckError::from)?;
     }
     Ok(())
 }
