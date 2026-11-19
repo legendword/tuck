@@ -48,6 +48,14 @@ pub enum TuckError {
     #[error("Manifest error: {0}")]
     Manifest(String),
 
+    /// A path derived from data on the drive (or from user input) would
+    /// escape the tuck root, follow a symlink, or is otherwise not usable.
+    #[error("Refusing to use {path}: {reason}")]
+    UnsafePath { path: PathBuf, reason: String },
+
+    #[error("Invalid prefix '{0}': use a relative folder path without '..'")]
+    InvalidPrefix(String),
+
     #[error("Operation cancelled")]
     Cancelled,
 
@@ -69,6 +77,8 @@ impl TuckError {
             TuckError::InsufficientSpace { .. } => 2,
             TuckError::ChecksumMismatch { .. } => 3,
             TuckError::Manifest(_) => 1,
+            TuckError::UnsafePath { .. } => 1,
+            TuckError::InvalidPrefix(_) => 1,
             TuckError::Cancelled => 4,
             TuckError::Other(_) => 1,
         }

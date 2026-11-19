@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use tuck_core::archive::AddPlan;
 use tuck_core::drive::DriveInfo;
 use tuck_core::manifest::{ArchiveEntry, FileChecksum};
+use tuck_core::pending::{CleanupPlan, PendingKind, PendingStatus};
 use tuck_core::restore::RestorePlan;
+use tuck_core::safety::printable;
 
 // --- DriveInfo ---
 
@@ -122,26 +124,74 @@ impl From<FfiAddPlan> for AddPlan {
 pub enum FfiPendingKind {
     Add,
     Restore,
+    /// The marker on the drive could not be read.
+    Unknown,
 }
 
+/// An interrupted-operation marker found on the drive, already vetted by
+/// tuck-core. The marker itself is untrusted (anyone can write one to a
+/// drive), so the UI should present `message` and `delete_path` rather than
+/// interpreting the raw paths.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct FfiPendingOperation {
     pub kind: FfiPendingKind,
     pub original_path: String,
     pub archive_path: String,
     pub started_at: i64,
+    /// The one path that cleaning up will delete, or `None` when cleanup only
+    /// removes the marker.
+    pub delete_path: Option<String>,
+    /// What cleaning up will do, ready to show to the user.
+    pub message: String,
 }
 
-impl From<tuck_core::pending::PendingOperation> for FfiPendingOperation {
-    fn from(op: tuck_core::pending::PendingOperation) -> Self {
+impl From<PendingStatus> for FfiPendingOperation {
+    fn from(status: PendingStatus) -> Self {
+        let kind = match status.op.as_ref().map(|op| op.kind) {
+            Some(PendingKind::Add) => FfiPendingKind::Add,
+            Some(PendingKind::Restore) => FfiPendingKind::Restore,
+            None => FfiPendingKind::Unknown,
+        };
+        let (delete_path, message) = match &status.plan {
+            CleanupPlan::Remove(target) => {
+                let shown = printable(target.display());
+                let message = match kind {
+                    FfiPendingKind::Restore => format!(
+                        "A restore started on this Mac was interrupted. Cleaning up will \
+                         permanently delete the partial local copy:\n\n{shown}\n\n\
+                         The archive on the drive is not affected."
+                    ),
+                    _ => format!(
+                        "A previous add was interrupted. Cleaning up will permanently \
+                         delete the partial copy on the drive:\n\n{shown}\n\n\
+                         Your local files are not affected."
+                    ),
+                };
+                (Some(target.to_string_lossy().into_owned()), message)
+            }
+            CleanupPlan::DiscardMarker { reason } => (
+                None,
+                format!(
+                    "The drive has a marker left by an interrupted operation. Nothing \
+                     will be deleted: {}. Cleaning up only removes the marker.",
+                    printable(reason)
+                ),
+            ),
+        };
+        let op = status.op;
         FfiPendingOperation {
-            kind: match op.kind {
-                tuck_core::pending::PendingKind::Add => FfiPendingKind::Add,
-                tuck_core::pending::PendingKind::Restore => FfiPendingKind::Restore,
-            },
-            original_path: op.original_path.to_string_lossy().into_owned(),
-            archive_path: op.archive_path.to_string_lossy().into_owned(),
-            started_at: op.started_at.timestamp(),
+            kind,
+            original_path: op
+                .as_ref()
+                .map(|op| op.original_path.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            archive_path: op
+                .as_ref()
+                .map(|op| op.archive_path.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            started_at: op.as_ref().map(|op| op.started_at.timestamp()).unwrap_or(0),
+            delete_path,
+            message,
         }
     }
 }

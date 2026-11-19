@@ -10,7 +10,7 @@ Tuck is a macOS CLI tool for archiving files/folders to an external drive and re
 source "$HOME/.cargo/env"   # if cargo isn't in PATH
 cargo check                 # type-check
 cargo build                 # compile
-cargo test                  # run all unit tests (currently 33)
+cargo test                  # run all unit tests (currently 101)
 cargo run --bin tuck -- <command>  # run the CLI
 ```
 
@@ -26,16 +26,17 @@ All tests are in-module `#[cfg(test)]` blocks using `tempfile` for isolation. No
 ### Key modules in tuck-core
 
 - `error.rs` — `TuckError` enum, `IoContext` trait for wrapping `std::io::Error` with path info
-- `manifest.rs` — JSON manifest (``.tuck-manifest.json`) on the drive root. Atomic writes via .tmp+rename.
+- `safety.rs` — guards for data that lives on the drive (see "The drive is untrusted" below): `ensure_contained` (path stays inside a root, no `..`, no symlink components), `read_metadata_file`/`write_metadata_file` (never read or write through a symlink), `remove_if_present` (clear one of tuck's reserved names on the drive, whatever was planted there), `printable` (escape control characters before display).
+- `manifest.rs` — JSON manifest (``.tuck-manifest.json`) on the drive root. Atomic writes via .tmp+rename, capped at 1 GiB on both load and save. `FileChecksum::path_under` validates a checksum's `relative_path` before it is used. `entries_under(path)` lists entries archived from inside `path`; their archives live inside that path's archive tree.
 - `checksum.rs` — BLAKE3 streaming hashes, 64KB chunks. Hash/verify functions accept `Option<&dyn Progress>`.
 - `progress.rs` — `Progress` trait (`start_phase`, `advance`, `finish_phase`). Core modules accept `Option<&dyn Progress>` to report byte-level progress. CLI implements it with `indicatif` progress bars.
 - `config.rs` — loads/saves `~/.config/tuck/config.json` with `default_prefix` and `default_drive`. CLI commands load config and use `resolve_prefix()`/`resolve_drive_name()` to merge CLI flags with config defaults (CLI flag wins).
-- `drive.rs` — scans `/Volumes/`, filters boot volume symlinks. `resolve_drive(name, prefix)` is the main entry point. `DriveInfo` has `mount_path` (physical mount) and `root_path` (effective tuck root, = `mount_path` or `mount_path/prefix`). All other modules use `root_path`. Also provides `check_space()` for disk space validation (used by `plan_add` and `plan_restore`).
+- `drive.rs` — scans `/Volumes/`, filters boot volume symlinks. `resolve_drive(name, prefix)` is the main entry point. `DriveInfo` has `mount_path` (physical mount) and `root_path` (effective tuck root, = `mount_path` or `mount_path/prefix`). All other modules use `root_path`. `with_prefix` validates the prefix (relative, no `..`). `safe_archive_path` computes and validates an archive location; use it instead of the raw `archive_path_on_drive` whenever the result will be read, written or deleted. Also provides `check_space()` for disk space validation (used by `plan_add` and `plan_restore`).
 - `copy.rs` — recursive copy preserving mtime via `filetime`. Skips symlinks. Accepts `Option<&dyn Progress>`.
-- `pending.rs` — `PendingOperation` marker written to `.tuck-pending.json` before copy starts, cleared on success. If interrupted, the next command detects it and prompts cleanup. Handles both add (removes partial on drive) and restore (removes partial local copy).
-- `archive.rs` — `plan_add` validates, `execute_add` does pending→hash→copy→verify→manifest→clear pending
-- `restore.rs` — `plan_restore` finds entry, `execute_restore` does verify→pending→copy→manifest→clear pending
-- `update.rs` — self-update via GitHub Releases API. `check_for_update` compares local version against latest release. `execute_update` downloads the binary with progress reporting and atomically replaces the current executable. Uses `ureq` for HTTP.
+- `pending.rs` — `PendingOperation` marker written to `.tuck-pending.json` before copy starts, cleared on success. If interrupted, the next command detects it and prompts cleanup. The marker is untrusted when read back: `PendingOperation::inspect` returns a `PendingStatus` whose `CleanupPlan` is either `Remove(path)` or `DiscardMarker { reason }`, and `PendingStatus::resolve` re-derives the plan before deleting. An add may only remove its recomputed archive path inside the drive root. A restore may only remove the local path if `RestoreJournal` (local file `~/.config/tuck/restore-journal.json`) has a matching record, i.e. this machine started it, and the record says the path did not exist before the restore. Neither kind removes a path that still has other entries' archives under it. Unreadable markers are discardable, never fatal.
+- `archive.rs` — `plan_add` validates, `execute_add` does re-validate→pending→hash→copy→verify→manifest→clear pending. Both refuse a source whose archive location would be inside itself, and a folder that has an already-archived entry inside it (clearing its archive location would destroy that entry's archive).
+- `restore.rs` — `plan_restore` finds entry, `execute_restore` does re-validate→verify (checksums, and that the archive holds only files the manifest accounts for)→journal+pending→copy→manifest→clear pending→remove archive. Entries nested inside the restored path are verified and restored with it, and leave the manifest with it when the archive is removed. Refuses to overwrite an existing local path unless `overwrite` is true.
+- `update.rs` — self-update via GitHub Releases API. `check_for_update` compares local version against latest release. `execute_update` downloads the binary with progress reporting, verifies it against the release's published SHA-256 (`tuck-macos-universal.sha256`), and atomically replaces the current executable. Download URLs must be HTTPS under this repo's releases. Uses `ureq` for HTTP.
 - `verify.rs` — `verify_entry`/`verify_all` check stored checksums against files on drive
 
 ### FFI layer (tuck-ffi)
@@ -43,7 +44,9 @@ All tests are in-module `#[cfg(test)]` blocks using `tempfile` for isolation. No
 - `types.rs` — `Ffi*` mirror structs with `#[derive(uniffi::Record)]` and `From` impls in both directions
 - `error.rs` — `FfiTuckError` enum with `#[derive(uniffi::Error)]`, converts from `TuckError`
 - `progress.rs` — `FfiProgress` callback interface (`#[uniffi::export(callback_interface)]`) and `ProgressBridge` that implements core's `Progress` trait
-- `functions.rs` — `#[uniffi::export]` free functions: `list_drives`, `resolve_drive`, `plan_add`, `execute_add`, `delete_local`, `plan_restore`, `execute_restore`, `load_manifest_entries`
+- `functions.rs` — `#[uniffi::export]` free functions: `list_drives`, `resolve_drive`, `plan_add`, `execute_add`, `delete_local`, `plan_restore`, `execute_restore` (never overwrites), `load_manifest_entries`, `load_pending`, `cleanup_pending`
+
+After changing anything exported through UniFFI, regenerate `TuckApp/Generated/` (`./build-ffi.sh`, or on any platform `cargo run -p tuck-ffi --bin uniffi-bindgen -- generate --library target/debug/libtuck_ffi.a --language swift --out-dir TuckApp/Generated` and rename `tuck_ffiFFI.modulemap` to `module.modulemap`).
 
 ### macOS app (TuckApp/)
 
@@ -60,9 +63,9 @@ SwiftUI app (macOS 14.0+, no sandbox) in `TuckApp/`. Uses xcodegen (`project.yml
 
 ### Release & distribution
 
-- **GitHub Actions** (`.github/workflows/release.yml`) — on `v*` tag push, builds a universal macOS binary (aarch64 + x86_64 via `lipo`), publishes to GitHub Releases as `tuck-macos-universal`.
-- **Install script** (`install.sh`) — `curl -fsSL .../install.sh | sh` downloads the latest release binary to `/usr/local/bin`.
-- **Self-update** — `tuck update` checks the GitHub Releases API, downloads the new binary with progress, and atomically replaces itself.
+- **GitHub Actions** (`.github/workflows/release.yml`) — on `v*` tag push, a read-only `build` job builds a universal macOS binary (aarch64 + x86_64 via `lipo`) and the app DMG plus `.sha256` files; a separate `publish` job (the only one with `contents: write`) creates the GitHub Release with `gh`.
+- **Install script** (`install.sh`) — `curl -fsSL .../install.sh | sh` downloads the latest release binary, checks it against the published SHA-256, and installs it to `/usr/local/bin` (root-owned when sudo is needed).
+- **Self-update** — `tuck update` checks the GitHub Releases API, downloads the new binary with progress, verifies its SHA-256, and atomically replaces itself.
 
 ### macOS app build
 
@@ -76,6 +79,7 @@ After changing Rust code, re-run `./build-ffi.sh` before rebuilding in Xcode. Th
 
 ## Conventions
 
+- **The drive is untrusted.** The manifest, the pending marker and the directory layout on a drive may have been written by someone else (or be a crafted disk image). Never delete, write or read at a path taken from the drive without `safety::ensure_contained` / `drive::safe_archive_path` / `FileChecksum::path_under`; never follow symlinks found on the drive; never let drive data alone authorize deleting a local path; pass drive-derived text through `safety::printable` before printing.
 - All paths stored in the manifest are canonicalized (absolute, symlinks resolved)
 - Archive path on drive = drive root_path + original path with leading `/` stripped (root_path = mount_path when no prefix, mount_path/prefix otherwise)
 - Error handling: library returns `TuckResult<T>`, CLI maps `TuckError::exit_code()` to process exit codes (0=ok, 1=general, 2=drive, 3=checksum, 4=cancelled)

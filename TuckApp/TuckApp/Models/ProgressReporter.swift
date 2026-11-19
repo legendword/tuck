@@ -40,7 +40,9 @@ final class ProgressReporter: FfiProgress, @unchecked Sendable {
 
     func advance(bytes: UInt64) {
         lock.lock()
-        _completedBytes += bytes
+        // Wrapping add: sizes can come from the manifest on the drive, and a
+        // plain += would trap on overflow.
+        _completedBytes &+= bytes
         lock.unlock()
     }
 

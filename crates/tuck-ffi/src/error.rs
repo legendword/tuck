@@ -36,6 +36,13 @@ pub enum FfiTuckError {
     Manifest {
         message: String,
     },
+    UnsafePath {
+        path: String,
+        reason: String,
+    },
+    InvalidPrefix {
+        prefix: String,
+    },
     Cancelled,
     Other {
         message: String,
@@ -83,6 +90,11 @@ impl From<TuckError> for FfiTuckError {
                 actual,
             },
             TuckError::Manifest(message) => FfiTuckError::Manifest { message },
+            TuckError::UnsafePath { path, reason } => FfiTuckError::UnsafePath {
+                path: path.to_string_lossy().into_owned(),
+                reason,
+            },
+            TuckError::InvalidPrefix(prefix) => FfiTuckError::InvalidPrefix { prefix },
             TuckError::Cancelled => FfiTuckError::Cancelled,
             TuckError::Other(message) => FfiTuckError::Other { message },
         }
@@ -121,6 +133,13 @@ impl std::fmt::Display for FfiTuckError {
                 "Checksum mismatch for {path}: expected {expected}, got {actual}"
             ),
             FfiTuckError::Manifest { message } => write!(f, "Manifest error: {message}"),
+            FfiTuckError::UnsafePath { path, reason } => {
+                write!(f, "Refusing to use {path}: {reason}")
+            }
+            FfiTuckError::InvalidPrefix { prefix } => write!(
+                f,
+                "Invalid prefix '{prefix}': use a relative folder path without '..'"
+            ),
             FfiTuckError::Cancelled => write!(f, "Operation cancelled"),
             FfiTuckError::Other { message } => write!(f, "{message}"),
         }

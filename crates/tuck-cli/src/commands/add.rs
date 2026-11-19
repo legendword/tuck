@@ -29,14 +29,14 @@ pub fn run(
     println!(
         "{} {} ({}, {})",
         "Archive:".bold(),
-        plan.original_path.display(),
+        super::safe(plan.original_path.display()),
         kind,
         size
     );
     println!(
         "{} {}",
         "     To:".bold(),
-        plan.archive_path.display()
+        super::safe(plan.archive_path.display())
     );
 
     if dry_run {

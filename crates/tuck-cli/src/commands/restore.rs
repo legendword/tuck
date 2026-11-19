@@ -32,12 +32,12 @@ pub fn run(
     println!(
         "{} {}",
         "Restore:".bold(),
-        plan.archive_path.display()
+        super::safe(plan.archive_path.display())
     );
     println!(
         "{} {} ({}, {})",
         "     To:".bold(),
-        plan.original_path.display(),
+        super::safe(plan.original_path.display()),
         kind,
         size
     );
@@ -72,7 +72,7 @@ pub fn run(
     }
 
     let progress = CliProgress::new();
-    restore::execute_restore(&plan, keep_archive, Some(&progress))?;
+    restore::execute_restore(&plan, keep_archive, force, Some(&progress))?;
 
     println!("{}", "Restored successfully.".green().bold());
     Ok(())

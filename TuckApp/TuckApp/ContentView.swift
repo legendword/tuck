@@ -110,8 +110,11 @@ struct ContentView: View {
                 tuckService.pendingOperation = nil
             }
         } message: {
+            // The text comes from the Rust side, after tuck-core has vetted the
+            // marker: it names the exact path that "Clean Up" will delete, or
+            // says that nothing will be deleted.
             if let op = tuckService.pendingOperation {
-                Text(pendingMessage(op))
+                Text(op.message)
             }
         }
         .alert(
@@ -150,14 +153,4 @@ struct ContentView: View {
 
 private func fileName(_ path: String) -> String {
     (path as NSString).lastPathComponent
-}
-
-private func pendingMessage(_ op: FfiPendingOperation) -> String {
-    let kind: String
-    switch op.kind {
-    case .add: kind = "add"
-    case .restore: kind = "restore"
-    }
-    let name = (op.originalPath as NSString).lastPathComponent
-    return "A previous \(kind) operation for \"\(name)\" was interrupted. Clean up partial files to continue."
 }

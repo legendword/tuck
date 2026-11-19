@@ -861,19 +861,43 @@ public func FfiConverterTypeFfiFileChecksum_lower(_ value: FfiFileChecksum) -> R
 }
 
 
+/**
+ * An interrupted-operation marker found on the drive, already vetted by
+ * tuck-core. The marker itself is untrusted (anyone can write one to a
+ * drive), so the UI should present `message` and `delete_path` rather than
+ * interpreting the raw paths.
+ */
 public struct FfiPendingOperation {
     public var kind: FfiPendingKind
     public var originalPath: String
     public var archivePath: String
     public var startedAt: Int64
+    /**
+     * The one path that cleaning up will delete, or `None` when cleanup only
+     * removes the marker.
+     */
+    public var deletePath: String?
+    /**
+     * What cleaning up will do, ready to show to the user.
+     */
+    public var message: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(kind: FfiPendingKind, originalPath: String, archivePath: String, startedAt: Int64) {
+    public init(kind: FfiPendingKind, originalPath: String, archivePath: String, startedAt: Int64, 
+        /**
+         * The one path that cleaning up will delete, or `None` when cleanup only
+         * removes the marker.
+         */deletePath: String?, 
+        /**
+         * What cleaning up will do, ready to show to the user.
+         */message: String) {
         self.kind = kind
         self.originalPath = originalPath
         self.archivePath = archivePath
         self.startedAt = startedAt
+        self.deletePath = deletePath
+        self.message = message
     }
 }
 
@@ -896,6 +920,12 @@ extension FfiPendingOperation: Equatable, Hashable {
         if lhs.startedAt != rhs.startedAt {
             return false
         }
+        if lhs.deletePath != rhs.deletePath {
+            return false
+        }
+        if lhs.message != rhs.message {
+            return false
+        }
         return true
     }
 
@@ -904,6 +934,8 @@ extension FfiPendingOperation: Equatable, Hashable {
         hasher.combine(originalPath)
         hasher.combine(archivePath)
         hasher.combine(startedAt)
+        hasher.combine(deletePath)
+        hasher.combine(message)
     }
 }
 
@@ -919,7 +951,9 @@ public struct FfiConverterTypeFfiPendingOperation: FfiConverterRustBuffer {
                 kind: FfiConverterTypeFfiPendingKind.read(from: &buf), 
                 originalPath: FfiConverterString.read(from: &buf), 
                 archivePath: FfiConverterString.read(from: &buf), 
-                startedAt: FfiConverterInt64.read(from: &buf)
+                startedAt: FfiConverterInt64.read(from: &buf), 
+                deletePath: FfiConverterOptionString.read(from: &buf), 
+                message: FfiConverterString.read(from: &buf)
         )
     }
 
@@ -928,6 +962,8 @@ public struct FfiConverterTypeFfiPendingOperation: FfiConverterRustBuffer {
         FfiConverterString.write(value.originalPath, into: &buf)
         FfiConverterString.write(value.archivePath, into: &buf)
         FfiConverterInt64.write(value.startedAt, into: &buf)
+        FfiConverterOptionString.write(value.deletePath, into: &buf)
+        FfiConverterString.write(value.message, into: &buf)
     }
 }
 
@@ -1047,6 +1083,10 @@ public enum FfiPendingKind {
     
     case add
     case restore
+    /**
+     * The marker on the drive could not be read.
+     */
+    case unknown
 }
 
 
@@ -1068,6 +1108,8 @@ public struct FfiConverterTypeFfiPendingKind: FfiConverterRustBuffer {
         
         case 2: return .restore
         
+        case 3: return .unknown
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -1082,6 +1124,10 @@ public struct FfiConverterTypeFfiPendingKind: FfiConverterRustBuffer {
         
         case .restore:
             writeInt(&buf, Int32(2))
+        
+        
+        case .unknown:
+            writeInt(&buf, Int32(3))
         
         }
     }
@@ -1134,6 +1180,10 @@ public enum FfiTuckError: Swift.Error {
     case ChecksumMismatch(path: String, expected: String, actual: String
     )
     case Manifest(message: String
+    )
+    case UnsafePath(path: String, reason: String
+    )
+    case InvalidPrefix(prefix: String
     )
     case Cancelled
     case Other(message: String
@@ -1188,8 +1238,15 @@ public struct FfiConverterTypeFfiTuckError: FfiConverterRustBuffer {
         case 11: return .Manifest(
             message: try FfiConverterString.read(from: &buf)
             )
-        case 12: return .Cancelled
-        case 13: return .Other(
+        case 12: return .UnsafePath(
+            path: try FfiConverterString.read(from: &buf), 
+            reason: try FfiConverterString.read(from: &buf)
+            )
+        case 13: return .InvalidPrefix(
+            prefix: try FfiConverterString.read(from: &buf)
+            )
+        case 14: return .Cancelled
+        case 15: return .Other(
             message: try FfiConverterString.read(from: &buf)
             )
 
@@ -1262,12 +1319,23 @@ public struct FfiConverterTypeFfiTuckError: FfiConverterRustBuffer {
             FfiConverterString.write(message, into: &buf)
             
         
-        case .Cancelled:
+        case let .UnsafePath(path,reason):
             writeInt(&buf, Int32(12))
+            FfiConverterString.write(path, into: &buf)
+            FfiConverterString.write(reason, into: &buf)
+            
+        
+        case let .InvalidPrefix(prefix):
+            writeInt(&buf, Int32(13))
+            FfiConverterString.write(prefix, into: &buf)
+            
+        
+        case .Cancelled:
+            writeInt(&buf, Int32(14))
         
         
         case let .Other(message):
-            writeInt(&buf, Int32(13))
+            writeInt(&buf, Int32(15))
             FfiConverterString.write(message, into: &buf)
             
         }
@@ -1643,6 +1711,9 @@ fileprivate struct FfiConverterSequenceTypeFfiFileChecksum: FfiConverterRustBuff
         return seq
     }
 }
+/**
+ * Carry out the cleanup that `load_pending` described and remove the marker.
+ */
 public func cleanupPending(driveRoot: String)throws   {try rustCallWithError(FfiConverterTypeFfiTuckError_lift) {
     uniffi_tuck_ffi_fn_func_cleanup_pending(
         FfiConverterString.lower(driveRoot),$0
@@ -1684,6 +1755,11 @@ public func loadManifestEntries(driveRoot: String)throws  -> [FfiArchiveEntry]  
     )
 })
 }
+/**
+ * Look for an interrupted-operation marker on the drive. The result says
+ * what cleaning it up would do; an unreadable or untrusted marker is
+ * reported with a plan that deletes nothing.
+ */
 public func loadPending(driveRoot: String)throws  -> FfiPendingOperation?  {
     return try  FfiConverterOptionTypeFfiPendingOperation.lift(try rustCallWithError(FfiConverterTypeFfiTuckError_lift) {
     uniffi_tuck_ffi_fn_func_load_pending(
@@ -1732,7 +1808,7 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_tuck_ffi_checksum_func_cleanup_pending() != 41402) {
+    if (uniffi_tuck_ffi_checksum_func_cleanup_pending() != 15650) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tuck_ffi_checksum_func_delete_local() != 22128) {
@@ -1750,7 +1826,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_tuck_ffi_checksum_func_load_manifest_entries() != 23479) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_tuck_ffi_checksum_func_load_pending() != 9541) {
+    if (uniffi_tuck_ffi_checksum_func_load_pending() != 15487) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_tuck_ffi_checksum_func_plan_add() != 10277) {
