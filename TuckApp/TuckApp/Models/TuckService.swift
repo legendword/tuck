@@ -72,7 +72,7 @@ class TuckService {
 
         let plan: FfiAddPlan
         do {
-            plan = try planAdd(path: path, drive: drive)
+            plan = try planAdd(path: path, drive: drive, force: false)
         } catch {
             await MainActor.run {
                 self.error = AppError(title: "Add Error", message: describeError(error))

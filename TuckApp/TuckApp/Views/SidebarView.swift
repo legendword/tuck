@@ -76,5 +76,7 @@ private struct EntryRow: View {
 func formatBytes(_ bytes: UInt64) -> String {
     let formatter = ByteCountFormatter()
     formatter.countStyle = .file
-    return formatter.string(fromByteCount: Int64(bytes))
+    // Sizes come from the manifest on the drive; a plain Int64(bytes) traps
+    // on values above Int64.max.
+    return formatter.string(fromByteCount: Int64(clamping: bytes))
 }
