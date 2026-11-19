@@ -76,6 +76,11 @@ struct JournalRecord {
     drive_root: PathBuf,
     original_path: PathBuf,
     started_at: DateTime<Utc>,
+    /// Something already existed at `original_path` when the restore started
+    /// (a restore with overwrite). What is there is then more than a partial
+    /// copy, so cleanup must never delete it.
+    #[serde(default)]
+    local_existed: bool,
 }
 
 impl RestoreJournal {
@@ -107,13 +112,22 @@ impl RestoreJournal {
 
     /// Record that a restore is starting. Replaces any earlier record for the
     /// same drive root: a drive root has at most one operation in flight.
-    pub fn record(&self, drive_root: &Path, op: &PendingOperation) -> TuckResult<()> {
+    ///
+    /// `local_existed` says whether something was already at the local path
+    /// before the restore began; cleanup never deletes the path in that case.
+    pub fn record(
+        &self,
+        drive_root: &Path,
+        op: &PendingOperation,
+        local_existed: bool,
+    ) -> TuckResult<()> {
         let mut records = self.load();
         records.retain(|r| r.drive_root != drive_root);
         records.push(JournalRecord {
             drive_root: drive_root.to_path_buf(),
             original_path: op.original_path.clone(),
             started_at: op.started_at,
+            local_existed,
         });
         self.save(&records)
     }
@@ -132,7 +146,11 @@ impl RestoreJournal {
 
     /// True if this machine started exactly this restore on this drive root.
     pub fn contains(&self, drive_root: &Path, op: &PendingOperation) -> bool {
-        self.load().iter().any(|r| {
+        self.find(drive_root, op).is_some()
+    }
+
+    fn find(&self, drive_root: &Path, op: &PendingOperation) -> Option<JournalRecord> {
+        self.load().into_iter().find(|r| {
             r.drive_root == drive_root
                 && r.original_path == op.original_path
                 && r.started_at == op.started_at
@@ -178,9 +196,8 @@ fn classify(
     // Recompute the drive-side location instead of trusting `op.archive_path`.
     // This also rejects `..` and symlinks that would lead off the drive.
     let archive_path = safe_archive_path(drive_root, &op.original_path);
-    let listed = Manifest::load(drive_root)?
-        .find_entry(&op.original_path)
-        .is_some();
+    let manifest = Manifest::load(drive_root)?;
+    let listed = manifest.find_entry(&op.original_path).is_some();
 
     Ok(match op.kind {
         PendingKind::Add => match archive_path {
@@ -192,16 +209,29 @@ fn classify(
             Ok(_) if listed => {
                 discard("the manifest already lists this path, so the archive is complete")
             }
+            // Removing the path would take other entries' archives with it.
+            Ok(_) if manifest.entries_under(&op.original_path).next().is_some() => {
+                discard("other archived entries are stored under this path on the drive")
+            }
             Ok(path) if fs::symlink_metadata(&path).is_err() => {
                 discard("no partial copy was found on the drive")
             }
             Ok(path) => CleanupPlan::Remove(path),
         },
         PendingKind::Restore => {
-            if !journal.contains(drive_root, op) {
+            let record = journal.find(drive_root, op);
+            if record.is_none() {
                 discard(
                     "this restore was not started by tuck on this Mac, \
                      so no local files will be deleted for it",
+                )
+            } else if record.is_some_and(|r| r.local_existed) {
+                // A restore over an existing path: what is there now is not
+                // just a partial copy, and may hold data that was never on
+                // the drive.
+                discard(
+                    "the local path already existed before this restore started, \
+                     so it is kept",
                 )
             } else if !listed {
                 // The entry is removed from the manifest only after the copy
@@ -233,8 +263,10 @@ impl PendingOperation {
     }
 
     /// Remove the pending marker after an operation completes successfully.
+    /// Whatever sits under the marker's name is removed, so a directory
+    /// planted there can be discarded like any other unusable marker.
     pub fn clear(drive_root: &Path) -> TuckResult<()> {
-        safety::remove_file_if_present(&Self::path_on_drive(drive_root))
+        safety::remove_if_present(&Self::path_on_drive(drive_root))
     }
 
     /// Read the pending marker on this drive root, if there is one.
@@ -563,7 +595,7 @@ mod tests {
         let op = f.op(PendingKind::Restore, &partial);
         fs::create_dir_all(&op.archive_path).unwrap();
         f.add_manifest_entry(&partial);
-        f.journal.record(f.root(), &op).unwrap();
+        f.journal.record(f.root(), &op, false).unwrap();
         PendingOperation::write(f.root(), &op).unwrap();
 
         let status = f.inspect().unwrap();
@@ -582,7 +614,7 @@ mod tests {
         let other = f.local_dir("Documents");
 
         let genuine = f.op(PendingKind::Restore, &partial);
-        f.journal.record(f.root(), &genuine).unwrap();
+        f.journal.record(f.root(), &genuine, false).unwrap();
 
         // Same drive, different local path.
         let forged = f.op(PendingKind::Restore, &other);
@@ -604,7 +636,7 @@ mod tests {
         // Interrupted after the manifest entry was removed: the copy back had
         // finished, so the local data is the only complete copy.
         let op = f.op(PendingKind::Restore, &restored);
-        f.journal.record(f.root(), &op).unwrap();
+        f.journal.record(f.root(), &op, false).unwrap();
         PendingOperation::write(f.root(), &op).unwrap();
 
         let status = f.inspect().unwrap();
@@ -613,6 +645,64 @@ mod tests {
 
         assert!(restored.join("file.txt").exists());
         assert!(!f.marker_exists());
+    }
+
+    #[test]
+    fn test_restore_cleanup_keeps_path_that_existed_before_the_restore() {
+        let f = Fixture::new();
+        // A restore with overwrite that failed part-way: the local folder was
+        // there before and still holds data that was never on the drive.
+        let existing = f.local_dir("Documents");
+
+        let op = f.op(PendingKind::Restore, &existing);
+        fs::create_dir_all(&op.archive_path).unwrap();
+        f.add_manifest_entry(&existing);
+        f.journal.record(f.root(), &op, true).unwrap();
+        PendingOperation::write(f.root(), &op).unwrap();
+
+        let status = f.inspect().unwrap();
+        assert!(is_discard(&status));
+        f.resolve(&status);
+
+        assert!(existing.join("file.txt").exists());
+        assert!(!f.marker_exists());
+    }
+
+    #[test]
+    fn test_add_marker_does_not_delete_other_entries_archives() {
+        let f = Fixture::new();
+        // A listed archive lives under the path the marker names.
+        let child = Path::new("/Users/test/Documents/project");
+        let child_archive = archive_path_on_drive(f.root(), child);
+        fs::create_dir_all(&child_archive).unwrap();
+        fs::write(child_archive.join("data.bin"), "only copy").unwrap();
+        f.add_manifest_entry(child);
+
+        let op = f.op(PendingKind::Add, Path::new("/Users/test/Documents"));
+        PendingOperation::write(f.root(), &op).unwrap();
+
+        let status = f.inspect().unwrap();
+        assert!(is_discard(&status));
+        f.resolve(&status);
+        assert!(child_archive.join("data.bin").exists());
+    }
+
+    #[test]
+    fn test_directory_planted_as_marker_is_discardable() {
+        let f = Fixture::new();
+        let marker = PendingOperation::path_on_drive(f.root());
+        fs::create_dir_all(marker.join("nested")).unwrap();
+
+        let status = f.inspect().unwrap();
+        assert!(status.op.is_none() && is_discard(&status));
+        f.resolve(&status);
+        assert!(!f.marker_exists());
+
+        // And a directory at the marker's temp name does not block writing one.
+        fs::create_dir_all(f.root().join(".tuck-pending.json.tmp/nested")).unwrap();
+        let op = f.op(PendingKind::Add, Path::new("/Users/test/x"));
+        PendingOperation::write(f.root(), &op).unwrap();
+        assert_eq!(PendingOperation::load(f.root()).unwrap().unwrap(), op);
     }
 
     #[test]
@@ -663,13 +753,13 @@ mod tests {
         let op = f.op(PendingKind::Restore, Path::new("/Users/test/a"));
         assert!(!f.journal.contains(f.root(), &op));
 
-        f.journal.record(f.root(), &op).unwrap();
+        f.journal.record(f.root(), &op, false).unwrap();
         assert!(f.journal.contains(f.root(), &op));
 
         // A newer operation on the same drive root supersedes the record.
         let mut newer = f.op(PendingKind::Restore, Path::new("/Users/test/b"));
         newer.started_at = op.started_at + chrono::Duration::seconds(1);
-        f.journal.record(f.root(), &newer).unwrap();
+        f.journal.record(f.root(), &newer, false).unwrap();
         assert!(!f.journal.contains(f.root(), &op));
         assert!(f.journal.contains(f.root(), &newer));
 

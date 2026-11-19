@@ -126,24 +126,46 @@ pub fn execute_restore_with_journal(
             ),
         });
     }
-    if !overwrite && fs::symlink_metadata(&plan.original_path).is_ok() {
+    let local_existed = fs::symlink_metadata(&plan.original_path).is_ok();
+    if local_existed && !overwrite {
         return Err(TuckError::AlreadyExists(plan.original_path.clone()));
     }
 
+    // Entries archived from inside this path (a folder archived first, then
+    // something new inside it) are stored inside its archive tree. The copy
+    // below brings them back along with it, so they are verified with it and
+    // are not mistaken for files the manifest does not know about.
+    let mut nested = Vec::new();
+    for entry in Manifest::load(&plan.drive_root)?.entries_under(&plan.original_path) {
+        let archive_path = safe_archive_path(&plan.drive_root, &entry.original_path)?;
+        nested.push((entry.clone(), archive_path));
+    }
+    let nested_roots: Vec<&Path> = nested.iter().map(|(_, p)| p.as_path()).collect();
+    let total_bytes = nested
+        .iter()
+        .fold(plan.entry.size_bytes, |sum, (e, _)| sum.saturating_add(e.size_bytes));
+
     // Step 1: Verify the archive before restoring
     if let Some(p) = progress {
-        p.start_phase("Verifying archive", plan.entry.size_bytes);
+        p.start_phase("Verifying archive", total_bytes);
     }
-    let files = checked_archive_files(&plan.archive_path, &plan.entry)?;
-    for (cs, file_path) in plan.entry.checksums.iter().zip(files) {
-        if !checksum::verify_checksum_with_progress(&file_path, &cs.hash, cs.size_bytes, progress)?
-        {
-            let actual = checksum::hash_file(&file_path)?;
-            return Err(TuckError::ChecksumMismatch {
-                path: file_path,
-                expected: cs.hash.clone(),
-                actual,
-            });
+    let own = (&plan.entry, plan.archive_path.as_path());
+    for (entry, archive_path) in std::iter::once(own).chain(nested.iter().map(|(e, p)| (e, p.as_path()))) {
+        let files = checked_archive_files(archive_path, entry, &nested_roots)?;
+        for (cs, file_path) in entry.checksums.iter().zip(files) {
+            if !checksum::verify_checksum_with_progress(
+                &file_path,
+                &cs.hash,
+                cs.size_bytes,
+                progress,
+            )? {
+                let actual = checksum::hash_file(&file_path)?;
+                return Err(TuckError::ChecksumMismatch {
+                    path: file_path,
+                    expected: cs.hash.clone(),
+                    actual,
+                });
+            }
         }
     }
     if let Some(p) = progress {
@@ -153,15 +175,16 @@ pub fn execute_restore_with_journal(
     // Record the restore locally, then write the pending marker on the drive.
     // The marker alone cannot authorize deleting a local path later (anyone
     // can write one to a drive); the local record is what makes cleanup of an
-    // interrupted restore possible. It is best effort: without it, a partial
-    // copy is simply left for the user to remove.
+    // interrupted restore possible, and it notes whether the local path was
+    // already there (if so, cleanup will never delete it). It is best effort:
+    // without it, a partial copy is simply left for the user to remove.
     let pending = PendingOperation {
         kind: PendingKind::Restore,
         original_path: plan.original_path.clone(),
         archive_path: plan.archive_path.clone(),
         started_at: Utc::now(),
     };
-    let _ = journal.record(&plan.drive_root, &pending);
+    let _ = journal.record(&plan.drive_root, &pending, local_existed);
     if let Err(e) = PendingOperation::write(&plan.drive_root, &pending) {
         let _ = journal.forget_drive(&plan.drive_root);
         return Err(e);
@@ -169,16 +192,23 @@ pub fn execute_restore_with_journal(
 
     // Step 2: Copy back to original location
     if let Some(p) = progress {
-        p.start_phase("Restoring files", plan.entry.size_bytes);
+        p.start_phase("Restoring files", total_bytes);
     }
     copy::copy_recursive(&plan.archive_path, &plan.original_path, progress)?;
     if let Some(p) = progress {
         p.finish_phase();
     }
 
-    // Step 3: Update manifest — remove entry
+    // Step 3: Update manifest — remove entry. Nested entries were restored
+    // with it; when the archive copy is about to be removed, theirs goes with
+    // it, so they leave the manifest too.
     let mut manifest = Manifest::load(&plan.drive_root)?;
     manifest.remove_entry(&plan.original_path)?;
+    if !keep_archive {
+        manifest
+            .entries
+            .retain(|e| !e.original_path.starts_with(&plan.original_path));
+    }
     manifest.save(&plan.drive_root)?;
 
     // The local copy is now complete. Clear the marker before removing the
@@ -208,8 +238,14 @@ pub fn execute_restore_with_journal(
 /// be a regular file. Restore copies the whole archive tree, so everything
 /// else in it must be accounted for too: a file that is not in the manifest
 /// was never verified, and tuck never writes symlinks or special files to the
-/// drive. The macOS metadata files that hashing skips are tolerated.
-fn checked_archive_files(archive_path: &Path, entry: &ArchiveEntry) -> TuckResult<Vec<PathBuf>> {
+/// drive. The macOS metadata files that hashing skips are tolerated, and the
+/// subtrees in `other_roots` (archives of other manifest entries stored
+/// inside this one) are checked separately, as entries of their own.
+fn checked_archive_files(
+    archive_path: &Path,
+    entry: &ArchiveEntry,
+    other_roots: &[&Path],
+) -> TuckResult<Vec<PathBuf>> {
     let mismatch = |path: &Path, reason: &str| TuckError::UnsafePath {
         path: path.to_path_buf(),
         reason: reason.to_string(),
@@ -251,7 +287,11 @@ fn checked_archive_files(archive_path: &Path, entry: &ArchiveEntry) -> TuckResul
     }
 
     if entry.is_directory {
-        for item in WalkDir::new(archive_path).follow_links(false) {
+        let walk = WalkDir::new(archive_path)
+            .follow_links(false)
+            .into_iter()
+            .filter_entry(|e| e.path() == archive_path || !other_roots.contains(&e.path()));
+        for item in walk {
             let item = item.map_err(walk_error(archive_path))?;
             let file_type = item.file_type();
             if file_type.is_dir() {
@@ -279,7 +319,7 @@ fn checked_archive_files(archive_path: &Path, entry: &ArchiveEntry) -> TuckResul
 fn walk_error(fallback: &Path) -> impl Fn(walkdir::Error) -> TuckError + '_ {
     move |e| TuckError::Io {
         path: e.path().unwrap_or(fallback).to_path_buf(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, e.to_string()),
+        source: std::io::Error::other(e.to_string()),
     }
 }
 
@@ -474,6 +514,106 @@ mod tests {
         assert_eq!(fs::read_to_string(project.join("sub/b.txt")).unwrap(), "bbb");
     }
 
+    /// A folder archived first, then something new archived inside it: the
+    /// second archive is stored inside the first one's tree on the drive.
+    fn nested_archives(f: &Fixture) -> (PathBuf, PathBuf) {
+        let (project, _) = f.archived_project();
+        let inner = project.join("new-work");
+        fs::create_dir_all(&inner).unwrap();
+        fs::write(inner.join("c.txt"), "ccc").unwrap();
+        f.archive(&inner);
+        fs::remove_dir(&project).unwrap();
+        (project, inner)
+    }
+
+    #[test]
+    fn test_restore_brings_back_nested_entries_with_their_parent() {
+        let f = Fixture::new();
+        let (project, inner) = nested_archives(&f);
+
+        let plan = plan_restore(&project, &f.drive()).unwrap();
+        f.restore(&plan, false, false).unwrap();
+
+        assert_eq!(fs::read_to_string(project.join("a.txt")).unwrap(), "aaa");
+        assert_eq!(fs::read_to_string(inner.join("c.txt")).unwrap(), "ccc");
+        // Both archives left the drive together, so both leave the manifest.
+        assert!(!plan.archive_path.exists());
+        assert!(Manifest::load(f.drive_dir.path()).unwrap().entries.is_empty());
+    }
+
+    #[test]
+    fn test_restore_keeping_archive_keeps_nested_entries_listed() {
+        let f = Fixture::new();
+        let (project, inner) = nested_archives(&f);
+
+        let plan = plan_restore(&project, &f.drive()).unwrap();
+        f.restore(&plan, true, false).unwrap();
+
+        let manifest = Manifest::load(f.drive_dir.path()).unwrap();
+        assert!(manifest.find_entry(&project).is_none());
+        assert!(manifest.find_entry(&inner).is_some());
+        assert!(plan.archive_path.join("new-work/c.txt").exists());
+    }
+
+    #[test]
+    fn test_restore_verifies_nested_entries_too() {
+        let f = Fixture::new();
+        let (project, _) = nested_archives(&f);
+        let plan = plan_restore(&project, &f.drive()).unwrap();
+
+        fs::write(plan.archive_path.join("new-work/c.txt"), "tampered").unwrap();
+        let err = f.restore(&plan, false, false).unwrap_err();
+        assert!(matches!(err, TuckError::ChecksumMismatch { .. }));
+
+        // A file that neither entry lists is still refused.
+        fs::write(plan.archive_path.join("new-work/c.txt"), "ccc").unwrap();
+        fs::write(plan.archive_path.join("new-work/planted.sh"), "x").unwrap();
+        let err = f.restore(&plan, false, false).unwrap_err();
+        assert!(matches!(err, TuckError::UnsafePath { .. }));
+        assert!(!project.exists());
+    }
+
+    #[test]
+    fn test_failed_overwrite_restore_never_offers_to_delete_the_existing_folder() {
+        let f = Fixture::new();
+        let root = f.drive_dir.path();
+        // The manifest claims Documents is a single file; locally it is a
+        // folder with data that was never on the drive.
+        let docs = f.local_path("Documents");
+        fs::create_dir_all(&docs).unwrap();
+        fs::write(docs.join("thesis.txt"), "precious").unwrap();
+        let archive_path = root.join(docs.strip_prefix("/").unwrap());
+        fs::create_dir_all(archive_path.parent().unwrap()).unwrap();
+        fs::write(&archive_path, "bait").unwrap();
+        f.rewrite_manifest(|m| {
+            m.add_entry(ArchiveEntry {
+                original_path: docs.clone(),
+                is_directory: false,
+                archived_at: Utc::now(),
+                size_bytes: 4,
+                checksums: vec![FileChecksum {
+                    relative_path: String::new(),
+                    hash: checksum::hash_file(&archive_path).unwrap(),
+                    size_bytes: 4,
+                }],
+                drive_name: "TestDrive".to_string(),
+            })
+            .unwrap()
+        });
+
+        // With overwrite the copy starts and fails (a file cannot replace a
+        // folder), leaving the marker and the local record behind.
+        let plan = plan_restore(&docs, &f.drive()).unwrap();
+        assert!(f.restore(&plan, true, true).is_err());
+
+        let status = PendingOperation::inspect_with_journal(root, &f.journal)
+            .unwrap()
+            .expect("the failed restore leaves a marker");
+        assert!(matches!(status.plan, crate::pending::CleanupPlan::DiscardMarker { .. }));
+        status.resolve_with_journal(root, &f.journal).unwrap();
+        assert_eq!(fs::read_to_string(docs.join("thesis.txt")).unwrap(), "precious");
+    }
+
     #[test]
     fn test_restore_refuses_symlink_inside_archive() {
         let f = Fixture::new();
@@ -512,7 +652,7 @@ mod tests {
             archive_path: archive_path.clone(),
             started_at: Utc::now(),
         };
-        f.journal.record(root, &pending).unwrap();
+        f.journal.record(root, &pending, false).unwrap();
         PendingOperation::write(root, &pending).unwrap();
         fs::create_dir_all(&project).unwrap();
         fs::write(project.join("a.txt"), "a").unwrap();

@@ -22,18 +22,21 @@ use crate::error::{IoContext, TuckError, TuckResult};
 ///
 /// Manifest entries, marker contents and volume names are written by
 /// whoever last had the drive. Control characters (including the ESC that
-/// starts a terminal escape sequence, and newlines) and Unicode
-/// bidirectional overrides are shown in escaped form, so stored text cannot
-/// move the cursor, restyle the screen, or disguise a path in a prompt.
+/// starts a terminal escape sequence, and newlines), Unicode line and
+/// paragraph separators, and bidirectional overrides are shown in escaped
+/// form, so stored text cannot move the cursor, restyle the screen, break a
+/// line, or reorder a path in a prompt. Other invisible characters (such as
+/// zero-width joiners, which some scripts need) are left as they are.
 pub fn printable(value: impl std::fmt::Display) -> String {
     let text = value.to_string();
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
-        let bidi_control = matches!(
+        // Bidi marks, embeddings, overrides and isolates, plus U+2028/U+2029.
+        let layout_control = matches!(
             c,
-            '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+            '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{2028}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
         );
-        if c.is_control() || bidi_control {
+        if c.is_control() || layout_control {
             out.extend(c.escape_unicode());
         } else {
             out.push(c);
@@ -166,9 +169,10 @@ pub fn tmp_sibling(path: &Path) -> PathBuf {
 /// `path`. `rename` replaces a symlink at `path` rather than following it.
 pub fn write_metadata_file(path: &Path, data: &[u8]) -> TuckResult<()> {
     let tmp = tmp_sibling(path);
-    // A leftover temp file (or a symlink planted under that name) is removed,
-    // not reused. `remove_file` unlinks a symlink itself.
-    remove_file_if_present(&tmp)?;
+    // Whatever is at the temp name is removed, not reused: a leftover temp
+    // file, a planted symlink (unlinked, not followed), or a planted directory
+    // (which would otherwise make every write fail).
+    remove_if_present(&tmp)?;
 
     let mut file = OpenOptions::new()
         .write(true)
@@ -185,9 +189,8 @@ pub fn write_metadata_file(path: &Path, data: &[u8]) -> TuckResult<()> {
         return Err(e);
     }
 
-    fs::rename(&tmp, path).io_context(path).map_err(|e| {
+    fs::rename(&tmp, path).io_context(path).inspect_err(|_| {
         let _ = fs::remove_file(&tmp);
-        e
     })
 }
 
@@ -195,6 +198,20 @@ pub fn write_metadata_file(path: &Path, data: &[u8]) -> TuckResult<()> {
 pub fn remove_file_if_present(path: &Path) -> TuckResult<()> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e).io_context(path),
+    }
+}
+
+/// Remove whatever is at `path`, if anything. A file or symlink is unlinked
+/// (a symlink is never followed); a directory is removed with its contents.
+///
+/// Used for tuck's own reserved file names on the drive, so that a directory
+/// planted under one of them cannot block tuck for good.
+pub fn remove_if_present(path: &Path) -> TuckResult<()> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_dir() => fs::remove_dir_all(path).io_context(path),
+        Ok(_) => remove_file_if_present(path),
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e).io_context(path),
     }
@@ -217,6 +234,7 @@ mod tests {
     #[test]
     fn test_printable_escapes_newlines_and_bidi_overrides() {
         assert_eq!(printable("a\nb\u{202E}txt.exe"), "a\\u{a}b\\u{202e}txt.exe");
+        assert_eq!(printable("a\u{2028}b\u{2029}c"), "a\\u{2028}b\\u{2029}c");
     }
 
     #[test]
@@ -363,6 +381,27 @@ mod tests {
 
         assert!(fs::symlink_metadata(&victim).is_err());
         assert_eq!(fs::read_to_string(&target).unwrap(), "data");
+    }
+
+    #[test]
+    fn test_planted_directories_do_not_block_metadata_writes() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("meta.json");
+        fs::create_dir_all(tmp_sibling(&target).join("nested")).unwrap();
+
+        write_metadata_file(&target, b"data").unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "data");
+
+        // remove_if_present clears a directory, but never through a symlink.
+        let outside = dir.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("keep.txt"), "keep").unwrap();
+        let planted = dir.path().join("planted");
+        fs::create_dir(&planted).unwrap();
+        symlink(&outside, planted.join("link")).unwrap();
+        remove_if_present(&planted).unwrap();
+        assert!(fs::symlink_metadata(&planted).is_err());
+        assert!(outside.join("keep.txt").exists());
     }
 
     #[test]

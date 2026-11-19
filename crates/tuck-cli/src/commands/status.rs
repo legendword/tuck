@@ -30,22 +30,26 @@ pub fn run(path: &str, drive_name: Option<&str>, prefix: Option<&str>) -> Result
     let mut found = false;
 
     for d in &drives {
-        if let Err(e) = super::check_pending(&d.root_path) {
-            if !scanning_all {
-                return Err(e);
+        let checked =
+            super::check_pending(&d.root_path).and_then(|()| verify::check_status(target, d));
+        let entry = match checked {
+            Ok(entry) => entry,
+            Err(e) if scanning_all => {
+                // Any mounted volume can carry a marker or a file under the
+                // manifest's name (and a read-only one cannot even be cleaned
+                // up). When every volume is being scanned, that must not stop
+                // the others from being checked.
+                eprintln!(
+                    "{} skipping drive '{}': {}",
+                    "Warning:".yellow().bold(),
+                    super::safe(&d.name),
+                    super::safe(&e)
+                );
+                continue;
             }
-            // Any mounted volume can carry a marker (and a read-only one cannot
-            // even be cleaned up). When every volume is being scanned, that
-            // must not stop the others from being checked.
-            eprintln!(
-                "{} skipping drive '{}': {}",
-                "Warning:".yellow().bold(),
-                super::safe(&d.name),
-                super::safe(&e)
-            );
-            continue;
-        }
-        if let Some(entry) = verify::check_status(target, d)? {
+            Err(e) => return Err(e),
+        };
+        if let Some(entry) = entry {
             found = true;
             let kind = if entry.is_directory {
                 "directory"

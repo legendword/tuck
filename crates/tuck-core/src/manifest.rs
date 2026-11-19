@@ -7,6 +7,10 @@ use crate::error::{TuckError, TuckResult};
 use crate::safety;
 
 const MANIFEST_FILENAME: &str = ".tuck-manifest.json";
+/// Upper bound on the manifest file (roughly four million archived files).
+/// Any mounted volume can carry a file under the manifest's name; without a
+/// bound, a huge one would be read into memory in full.
+const MANIFEST_MAX_BYTES: u64 = 1024 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileChecksum {
@@ -77,7 +81,7 @@ impl Manifest {
     /// is refused rather than followed.
     pub fn load(drive_mount: &Path) -> TuckResult<Self> {
         let path = Self::path_on_drive(drive_mount);
-        match safety::read_metadata_file(&path, None)? {
+        match safety::read_metadata_file(&path, Some(MANIFEST_MAX_BYTES))? {
             Some(data) => {
                 serde_json::from_str(&data).map_err(|e| TuckError::Manifest(e.to_string()))
             }
@@ -91,7 +95,25 @@ impl Manifest {
         let path = Self::path_on_drive(drive_mount);
         let data =
             serde_json::to_string_pretty(self).map_err(|e| TuckError::Manifest(e.to_string()))?;
+        // Never write a manifest that `load` would refuse to read back.
+        if data.len() as u64 > MANIFEST_MAX_BYTES {
+            return Err(TuckError::Manifest(format!(
+                "the manifest would exceed {MANIFEST_MAX_BYTES} bytes; \
+                 use a separate --prefix for further archives"
+            )));
+        }
         safety::write_metadata_file(&path, data.as_bytes())
+    }
+
+    /// Entries whose original path lies strictly inside `path`. Their archives
+    /// are stored inside the archive tree of `path` on the drive.
+    pub fn entries_under<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> impl Iterator<Item = &'a ArchiveEntry> + 'a {
+        self.entries
+            .iter()
+            .filter(move |e| e.original_path != path && e.original_path.starts_with(path))
     }
 
     /// Find an entry by its original path (canonicalized).
@@ -219,6 +241,31 @@ mod tests {
 
         let err = Manifest::load(dir.path()).unwrap_err();
         assert!(matches!(err, TuckError::UnsafePath { .. }));
+    }
+
+    #[test]
+    fn test_load_refuses_oversized_manifest() {
+        let dir = TempDir::new().unwrap();
+        // A sparse file: large on paper, instant to create.
+        let file = fs::File::create(Manifest::path_on_drive(dir.path())).unwrap();
+        file.set_len(MANIFEST_MAX_BYTES + 1).unwrap();
+
+        let err = Manifest::load(dir.path()).unwrap_err();
+        assert!(matches!(err, TuckError::UnsafePath { .. }));
+    }
+
+    #[test]
+    fn test_entries_under() {
+        let mut m = Manifest::new();
+        for path in ["/Users/me/Documents", "/Users/me/Documents/proj", "/Users/me/Documents2"] {
+            m.add_entry(sample_entry(path)).unwrap();
+        }
+        let under: Vec<_> = m
+            .entries_under(Path::new("/Users/me/Documents"))
+            .map(|e| e.original_path.clone())
+            .collect();
+        assert_eq!(under, vec![PathBuf::from("/Users/me/Documents/proj")]);
+        assert_eq!(m.entries_under(Path::new("/Users/me/Documents/proj")).count(), 0);
     }
 
     #[test]

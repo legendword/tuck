@@ -42,7 +42,7 @@ pub fn plan_add(path: &Path, drive: &DriveInfo, force: bool) -> TuckResult<AddPl
         safety::ensure_contained(&drive.mount_path, &drive.root_path)?;
     }
     let archive_path = safe_archive_path(&drive.root_path, &original_path)?;
-    ensure_source_excludes_root(&original_path, drive)?;
+    ensure_destination_outside_source(&original_path, drive)?;
 
     // Check if already archived in manifest
     let manifest = Manifest::load(&drive.root_path)?;
@@ -51,6 +51,7 @@ pub fn plan_add(path: &Path, drive: &DriveInfo, force: bool) -> TuckResult<AddPl
             return Err(TuckError::AlreadyExists(original_path));
         }
     }
+    ensure_no_nested_entries(&manifest, &original_path)?;
 
     let is_directory = original_path.is_dir();
     let size_bytes = copy::path_size(&original_path)?;
@@ -68,11 +69,13 @@ pub fn plan_add(path: &Path, drive: &DriveInfo, force: bool) -> TuckResult<AddPl
     })
 }
 
-/// Refuse to archive a directory that contains the tuck root itself (for
-/// example `/`, `/Volumes`, or the prefix folder): the copy would recurse into
-/// its own destination, and the local delete afterwards would take the
-/// archive with it.
-fn ensure_source_excludes_root(original_path: &Path, drive: &DriveInfo) -> TuckResult<()> {
+/// Refuse to archive something whose archive location lies inside itself.
+/// That happens when the source contains the tuck root (for example `/`,
+/// `/Volumes`, or the prefix folder), and for a folder on the drive named
+/// like the start of the drive's own path (`/Volumes/Drive/Volumes`). The
+/// copy would recurse into its own destination, and the local delete
+/// afterwards would take the new archive with it.
+fn ensure_destination_outside_source(original_path: &Path, drive: &DriveInfo) -> TuckResult<()> {
     let mount = drive
         .mount_path
         .canonicalize()
@@ -81,13 +84,35 @@ fn ensure_source_excludes_root(original_path: &Path, drive: &DriveInfo) -> TuckR
         Ok(rel) => mount.join(rel),
         Err(_) => drive.root_path.clone(),
     };
-    if root.starts_with(original_path) {
+    let destination = drive::archive_path_on_drive(&root, original_path);
+    if destination.starts_with(original_path) {
         return Err(TuckError::UnsafePath {
             path: original_path.to_path_buf(),
-            reason: format!("it contains the tuck folder {}", root.display()),
+            reason: format!(
+                "its archive location {} would be inside it",
+                destination.display()
+            ),
         });
     }
     Ok(())
+}
+
+/// Refuse to archive a folder when something inside it is already archived on
+/// this drive. That entry's archive is stored inside the folder's archive
+/// location, which is cleared before a new copy is written, so going ahead
+/// would destroy what may be the only copy of it.
+fn ensure_no_nested_entries(manifest: &Manifest, original_path: &Path) -> TuckResult<()> {
+    match manifest.entries_under(original_path).next() {
+        Some(nested) => Err(TuckError::UnsafePath {
+            path: original_path.to_path_buf(),
+            reason: format!(
+                "{} inside it is already archived on this drive and would be \
+                 replaced; restore that first",
+                nested.original_path.display()
+            ),
+        }),
+        None => Ok(()),
+    }
 }
 
 /// Execute an add: copy files to drive, verify checksums, update manifest.
@@ -122,12 +147,14 @@ pub fn execute_add_with_journal(
         });
     }
 
+    let mut manifest = Manifest::load(&plan.drive_root)?;
+    ensure_no_nested_entries(&manifest, &plan.original_path)?;
+
     // Remove existing archive if replacing
     if std::fs::symlink_metadata(&plan.archive_path).is_ok() {
         copy::remove_path(&plan.archive_path)?;
     }
     // Remove existing manifest entry if replacing
-    let mut manifest = Manifest::load(&plan.drive_root)?;
     if manifest.find_entry(&plan.original_path).is_some() {
         manifest.remove_entry(&plan.original_path)?;
         manifest.save(&plan.drive_root)?;
@@ -328,10 +355,53 @@ mod tests {
             root_path: mount.clone(),
         };
 
-        for source in [outer_path.as_path(), mount.as_path()] {
+        // Also a folder on the drive named like the start of the drive's own
+        // path: its archive location (<mount>/<first>/...) is inside it.
+        let first = mount.components().nth(1).unwrap().as_os_str().to_owned();
+        let lookalike = mount.join(&first);
+        fs::create_dir(&lookalike).unwrap();
+        fs::write(lookalike.join("a.txt"), "data").unwrap();
+
+        for source in [outer_path.as_path(), mount.as_path(), lookalike.as_path()] {
             let err = plan_add(source, &drive, false).unwrap_err();
             assert!(matches!(err, TuckError::UnsafePath { .. }), "{source:?}");
         }
+        assert!(lookalike.join("a.txt").exists());
+    }
+
+    #[test]
+    fn test_add_refuses_folder_with_an_archived_entry_inside() {
+        let drive_dir = TempDir::new().unwrap();
+        let source_tmp = TempDir::new().unwrap();
+        let parent = source_dir(&source_tmp);
+        let child = parent.join("child");
+        fs::create_dir(&child).unwrap();
+        fs::write(child.join("only-copy.txt"), "child data").unwrap();
+
+        // Archive the child and delete it locally, as `tuck add` does.
+        let drive = fake_drive(&drive_dir);
+        let child_plan = plan_add(&child, &drive, false).unwrap();
+        execute_add(&child_plan, None).unwrap();
+        fs::remove_dir_all(&child).unwrap();
+
+        // Archiving the parent used to clear its archive location first,
+        // silently destroying the child's archive while it stayed listed.
+        for force in [false, true] {
+            let err = plan_add(&parent, &drive, force).unwrap_err();
+            assert!(matches!(err, TuckError::UnsafePath { .. }));
+        }
+        let stale_plan = AddPlan {
+            original_path: parent.clone(),
+            archive_path: drive::archive_path_on_drive(&drive.root_path, &parent),
+            drive_name: drive.name.clone(),
+            drive_root: drive.root_path.clone(),
+            is_directory: true,
+            size_bytes: 8,
+        };
+        assert!(execute_add(&stale_plan, None).is_err());
+
+        let archived = child_plan.archive_path.join("only-copy.txt");
+        assert_eq!(fs::read_to_string(archived).unwrap(), "child data");
     }
 
     #[test]

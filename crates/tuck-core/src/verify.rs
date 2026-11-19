@@ -98,7 +98,11 @@ pub fn verify_all(
     let manifest = Manifest::load(&drive.root_path)?;
 
     if let Some(p) = progress {
-        let total: u64 = manifest.entries.iter().map(|e| e.size_bytes).sum();
+        // Sizes come from the manifest; do not let absurd ones overflow.
+        let total = manifest
+            .entries
+            .iter()
+            .fold(0u64, |sum, e| sum.saturating_add(e.size_bytes));
         p.start_phase("Verifying checksums", total);
     }
 
