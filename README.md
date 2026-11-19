@@ -59,7 +59,7 @@ Flags:
 tuck restore ~/Documents/BigProject
 ```
 
-Restores files to their exact original path. Verifies checksums before restoring, and refuses to restore if the archive on the drive contains anything the manifest does not list.
+Restores files to their exact original path. Verifies checksums before restoring, and refuses to restore if the archive folder on the drive contains files the manifest does not account for. If something inside the folder was archived separately later, it is verified and restored along with it.
 
 Flags:
 - `--force` — overwrite if local path already exists (without it, restore never overwrites)
@@ -128,8 +128,9 @@ Config is stored at `~/.config/tuck/config.json`.
 - **Manifest**: A `.tuck-manifest.json` file on the drive root tracks all archived entries with original paths, timestamps, sizes, and checksums. Written atomically (write `.tmp`, then rename).
 - **Disk space**: Both `add` and `restore` check available disk space before starting and fail early if insufficient.
 - **Symlinks**: Skipped with a warning (v1).
-- **Interrupted operations**: A `.tuck-pending.json` marker is written to the drive before a copy starts and removed when it finishes. If one is left behind, the next command shows exactly what cleaning up would delete and asks first (default: no). An interrupted restore is only cleaned up on the Mac that started it: tuck keeps a local record in `~/.config/tuck/restore-journal.json`, and without a matching record no local file is touched.
-- **The drive is treated as untrusted**: The manifest, the marker and the folder layout on a drive can be changed by anyone who has had the drive. Paths taken from them must stay inside the tuck folder on the drive, symlinks found on the drive are never followed, and text from the drive is escaped before it is printed. The checksums detect corruption; they are stored on the same drive, so they are not protection against someone deliberately modifying it.
+- **Interrupted operations**: A `.tuck-pending.json` marker is written to the drive before a copy starts and removed when it finishes. If one is left behind, the next command shows exactly what cleaning up would delete and asks first (default: no). An interrupted restore is only cleaned up on the Mac that started it: tuck keeps a local record in `~/.config/tuck/restore-journal.json`, and without a matching record no local file is touched. A local path that already existed before the restore (`--force`) is never deleted by cleanup.
+- **Nested archives**: You can archive something inside a folder that is already archived. The other way round is refused: archiving a folder while something inside it is already archived on the drive would replace that copy, so restore it first.
+- **The drive is treated as untrusted**: The manifest, the marker and the folder layout on a drive can be changed by anyone who has had the drive. Paths taken from them must stay inside the tuck folder on the drive, symlinks found on the drive are never followed, and control characters in text from the drive are escaped before it is printed. The checksums detect corruption; they are stored on the same drive, so they are not protection against someone deliberately modifying it.
 - **Self-update**: `tuck update` checks GitHub Releases for a newer version, downloads the binary over HTTPS from this repository's releases, verifies it against the SHA-256 published with the release, and atomically replaces the current executable.
 
 ## Testing locally
