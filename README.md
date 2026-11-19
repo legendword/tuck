@@ -59,10 +59,10 @@ Flags:
 tuck restore ~/Documents/BigProject
 ```
 
-Restores files to their exact original path. Verifies checksums before restoring.
+Restores files to their exact original path. Verifies checksums before restoring, and refuses to restore if the archive on the drive contains anything the manifest does not list.
 
 Flags:
-- `--force` — overwrite if local path already exists
+- `--force` — overwrite if local path already exists (without it, restore never overwrites)
 - `--keep-archive` — keep the copy on the drive after restoring
 - `--dry-run` — preview without making changes
 
@@ -103,7 +103,7 @@ tuck list --prefix tuck-macbook
 tuck restore ~/Documents/BigProject --prefix tuck-macbook
 ```
 
-This stores everything under `/Volumes/Drive/tuck-macbook/` instead of the drive root — including the manifest and all archived files. Each prefix gets its own independent manifest, so two machines can use the same drive with different prefixes (e.g. `tuck-macbook` and `tuck-imac`) without interfering.
+This stores everything under `/Volumes/Drive/tuck-macbook/` instead of the drive root — including the manifest and all archived files. A prefix must be a relative folder path on the drive; absolute paths and `..` are rejected. Each prefix gets its own independent manifest, so two machines can use the same drive with different prefixes (e.g. `tuck-macbook` and `tuck-imac`) without interfering.
 
 To avoid passing `--prefix` every time, set a default:
 
@@ -128,7 +128,9 @@ Config is stored at `~/.config/tuck/config.json`.
 - **Manifest**: A `.tuck-manifest.json` file on the drive root tracks all archived entries with original paths, timestamps, sizes, and checksums. Written atomically (write `.tmp`, then rename).
 - **Disk space**: Both `add` and `restore` check available disk space before starting and fail early if insufficient.
 - **Symlinks**: Skipped with a warning (v1).
-- **Self-update**: `tuck update` checks GitHub Releases for a newer version, downloads the binary, and atomically replaces the current executable.
+- **Interrupted operations**: A `.tuck-pending.json` marker is written to the drive before a copy starts and removed when it finishes. If one is left behind, the next command shows exactly what cleaning up would delete and asks first (default: no). An interrupted restore is only cleaned up on the Mac that started it: tuck keeps a local record in `~/.config/tuck/restore-journal.json`, and without a matching record no local file is touched.
+- **The drive is treated as untrusted**: The manifest, the marker and the folder layout on a drive can be changed by anyone who has had the drive. Paths taken from them must stay inside the tuck folder on the drive, symlinks found on the drive are never followed, and text from the drive is escaped before it is printed. The checksums detect corruption; they are stored on the same drive, so they are not protection against someone deliberately modifying it.
+- **Self-update**: `tuck update` checks GitHub Releases for a newer version, downloads the binary over HTTPS from this repository's releases, verifies it against the SHA-256 published with the release, and atomically replaces the current executable.
 
 ## Testing locally
 
@@ -173,6 +175,7 @@ tuck/
         drive.rs           # /Volumes/ scanning, drive resolution, disk space checks
         copy.rs            # Recursive copy with metadata preservation
         pending.rs         # Interrupted operation recovery
+        safety.rs          # Path containment and symlink-safe I/O for drive data
         progress.rs        # Progress trait for byte-level reporting
         archive.rs         # Plan and execute archive operations
         restore.rs         # Plan and execute restore operations
